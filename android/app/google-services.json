@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "45009830006",
+    "project_id": "brad-8c927",
+    "storage_bucket": "brad-8c927.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:45009830006:android:d128eb4c5faa54bacedf57",
+        "android_client_info": {
+          "package_name": "com.brad.brad"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUZFKn9PbSr20PXmE6eHjABtJMf5EMUXI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

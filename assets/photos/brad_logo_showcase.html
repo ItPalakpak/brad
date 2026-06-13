@@ -1,0 +1,405 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.wrap{padding:1.5rem 0}
+.section-label{font-size:13px;color:var(--color-text-secondary);font-weight:500;letter-spacing:.04em;text-transform:uppercase;margin-bottom:1rem}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1.5rem;align-items:center}
+.ctl-group{display:flex;gap:4px;flex-wrap:wrap}
+.ctl-label{font-size:12px;color:var(--color-text-secondary);margin-right:4px;align-self:center}
+button.pill{background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:99px;padding:5px 14px;font-size:13px;cursor:pointer;color:var(--color-text-primary);transition:background .15s,border-color .15s}
+button.pill.active{background:var(--color-background-tertiary);border-color:var(--color-border-primary);font-weight:500}
+.divider{width:1px;height:24px;background:var(--color-border-tertiary);align-self:center;margin:0 4px}
+.logo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:2rem}
+.logo-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:1.25rem;display:flex;flex-direction:column;align-items:center;gap:12px}
+.logo-card.dark-bg{background:#111827}
+.logo-card.warm-bg{background:#1A0E08}
+.logo-card.navy-bg{background:#0F172A}
+.logo-card.deep-bg{background:#0D0F1A}
+.logo-card.rider-bg{background:#0A1A0F}
+.logo-card svg{display:block}
+.logo-name{font-size:12px;color:var(--color-text-secondary);text-align:center}
+.dl-btn{font-size:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:5px 12px;cursor:pointer;color:var(--color-text-primary);width:100%;text-align:center}
+.dl-btn:hover{background:var(--color-background-tertiary)}
+.concept-title{font-size:14px;font-weight:500;color:var(--color-text-primary);margin-bottom:.25rem}
+.concept-desc{font-size:13px;color:var(--color-text-secondary);margin-bottom:1rem;line-height:1.5}
+.concept-section{margin-bottom:2rem}
+.bg-note{font-size:11px;color:var(--color-text-tertiary);margin-top:4px}
+</style>
+
+<div class="wrap">
+<h2 class="sr-only">BRAD logo concepts — interactive showcase with theme-aware variants and PNG downloads</h2>
+
+<div class="controls">
+  <span class="ctl-label">Concept:</span>
+  <div class="ctl-group">
+    <button class="pill active" onclick="setConcept('arrow')">Arrow box</button>
+    <button class="pill" onclick="setConcept('route')">Route pin</button>
+    <button class="pill" onclick="setConcept('scan')">Scan stack</button>
+  </div>
+  <div class="divider"></div>
+  <span class="ctl-label">Preview bg:</span>
+  <div class="ctl-group">
+    <button class="pill active" onclick="setBg('light')">Light</button>
+    <button class="pill" onclick="setBg('dark')">Dark</button>
+  </div>
+</div>
+
+<div id="concept-area"></div>
+</div>
+
+<script>
+const THEMES = {
+  'pure-bold-light':  { name:'Pure Bold · Light',  accent:'#2563EB', shadow:'#111827', bg:'#E9EEF5', surface:'#DCE3EA', text:'#0F1117' },
+  'pure-bold-dark':   { name:'Pure Bold · Dark',   accent:'#3B82F6', shadow:'rgba(249,250,251,0.75)', bg:'#1F2937', surface:'#111827', text:'#F0F2F5' },
+  'techy-dark':       { name:'Techy · Dark',       accent:'#00E5C0', shadow:'rgba(205,214,244,0.70)', bg:'#1A1D2E', surface:'#0D0F1A', text:'#F0F2F5' },
+  'friendly-light':   { name:'Friendly · Light',   accent:'#FF6B35', shadow:'#2C1810', bg:'#F0E8E0', surface:'#E5DCD3', text:'#0F1117' },
+  'trailblazer-dark': { name:'Trailblazer · Dark', accent:'#FACC15', shadow:'#000000', bg:'#1E293B', surface:'#0F172A', text:'#F0F2F5' },
+  'rider-green-dark': { name:'Rider Green · Dark', accent:'#22C55E', shadow:'rgba(209,250,229,0.7)', bg:'#122A19', surface:'#0A1A0F', text:'#F0F2F5' },
+};
+
+const CARD_BG = {
+  'pure-bold-light':'#E9EEF5','pure-bold-dark':'#111827',
+  'techy-dark':'#0D0F1A','friendly-light':'#E5DCD3',
+  'trailblazer-dark':'#0F172A','rider-green-dark':'#0A1A0F',
+};
+
+let activeConcept = 'arrow';
+let activeBg = 'light';
+
+function setConcept(c){
+  activeConcept = c;
+  document.querySelectorAll('.controls button').forEach(b=>{
+    if(['arrow','route','scan'].includes(b.textContent.trim().split(' ')[0].toLowerCase())||b.textContent.includes('Arrow')||b.textContent.includes('Route')||b.textContent.includes('Scan')){
+      b.classList.toggle('active', b.onclick.toString().includes(`'${c}'`));
+    }
+  });
+  render();
+}
+
+function setBg(bg){
+  activeBg = bg;
+  document.querySelectorAll('.controls button').forEach(b=>{
+    if(b.textContent==='Light'||b.textContent==='Dark') b.classList.toggle('active',b.textContent.toLowerCase()===bg);
+  });
+  render();
+}
+
+// ── SVG generators ─────────────────────────────────────────────────
+
+function logoArrowBox(t, size=80){
+  const {accent,shadow,surface,bg,text} = t;
+  const s = size, r = s*0.18;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 80 80">
+  <rect x="4" y="4" width="74" height="74" rx="${r}" fill="${surface}" stroke="${shadow}" stroke-width="1.5" opacity=".7"/>
+  <rect x="0" y="0" width="74" height="74" rx="${r}" fill="${bg}" stroke="${shadow}" stroke-width="1.5"/>
+  <!-- Original arrow (bounding box x:20-54 y:28-64), shifted +3x -6y to center on 40,40 -->
+  <polygon points="23,46 23,22 55,22 55,30 35,30 57,52 51,58 29,36 29,46" fill="${accent}"/>
+  </svg>`;
+}
+
+function iconArrowBox(t, size=80){
+  const {accent,shadow,surface,bg} = t;
+  const r = 14; // fixed in viewBox (0-80 space), ~18% of 80
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 80 80">
+  <rect x="4" y="4" width="72" height="72" rx="${r}" fill="${bg}" stroke="${shadow}" stroke-width="2"/>
+  <rect x="0" y="0" width="72" height="72" rx="${r}" fill="${surface}" stroke="${shadow}" stroke-width="1.5"/>
+  <!-- Original arrow (bounding box x:18-56 y:26-70), shifted to center on 40,40 -->
+  <polygon points="22,52 22,26 54,26 54,36 34,36 56,58 48,66 26,44 26,52" fill="${accent}"/>
+  </svg>`;
+}
+
+function logoRoutPin(t, size=80){
+  const {accent,shadow,surface,bg,text} = t;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size*1.1}" viewBox="0 0 80 88">
+  <ellipse cx="40" cy="86" rx="14" ry="4" fill="${shadow}" opacity=".18"/>
+  <path d="M40 72 C28 56 14 46 14 32 C14 18 26 6 40 6 C54 6 66 18 66 32 C66 46 52 56 40 72Z" fill="${bg}" stroke="${shadow}" stroke-width="2"/>
+  <path d="M40 68 C30 54 18 45 18 32 C18 20 28 10 40 10 C52 10 62 20 62 32 C62 45 50 54 40 68Z" fill="${surface}" opacity=".5"/>
+  <circle cx="40" cy="32" r="13" fill="${accent}"/>
+  <!-- Arrow pointing right, centered on 40,32 -->
+  <polygon points="31,27 31,37 37,37 37,42 50,32 37,22 37,27" fill="${bg}"/>
+  <polyline points="24,54 32,46" stroke="${accent}" stroke-width="2" stroke-dasharray="3,3" opacity=".5"/>
+  <polyline points="56,54 48,46" stroke="${accent}" stroke-width="2" stroke-dasharray="3,3" opacity=".5"/>
+  </svg>`;
+}
+
+function iconRoutPin(t, size=80){
+  const {accent,shadow,surface,bg} = t;
+  const r = 14;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 80 80">
+  <rect x="4" y="4" width="72" height="72" rx="${r}" fill="${bg}" stroke="${shadow}" stroke-width="2"/>
+  <rect x="0" y="0" width="72" height="72" rx="${r}" fill="${surface}" stroke="${shadow}" stroke-width="1.5"/>
+  <path d="M40 68 C30 54 18 46 18 32 C18 19 28 10 40 10 C52 10 62 19 62 32 C62 46 50 54 40 68Z" fill="${accent}" opacity=".2" stroke="${accent}" stroke-width="1.5"/>
+  <circle cx="40" cy="32" r="10" fill="${accent}"/>
+  <!-- Arrow pointing right, centered on 40,32 -->
+  <polygon points="33,28 33,36 38,36 38,40 47,32 38,24 38,28" fill="${bg}"/>
+  </svg>`;
+}
+
+function logoScanStack(t, size=80){
+  const {accent,shadow,surface,bg,text} = t;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 80 80">
+  <!-- Stacked cards centered: main card 8,12 w64 h58 -->
+  <rect x="12" y="16" width="64" height="54" rx="8" fill="${surface}" stroke="${shadow}" stroke-width="1.5" opacity=".5"/>
+  <rect x="8" y="12" width="64" height="54" rx="8" fill="${bg}" stroke="${shadow}" stroke-width="1.5"/>
+  <rect x="4" y="8" width="64" height="54" rx="8" fill="${surface}" stroke="${shadow}" stroke-width="1.5"/>
+  <rect x="12" y="16" width="48" height="38" rx="4" fill="${bg}"/>
+  <line x1="12" y1="36" x2="60" y2="36" stroke="${accent}" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="16" y="20" width="6" height="12" rx="1" fill="${accent}" opacity=".8"/>
+  <rect x="24" y="20" width="3" height="12" rx="1" fill="${accent}" opacity=".8"/>
+  <rect x="29" y="20" width="5" height="12" rx="1" fill="${accent}" opacity=".8"/>
+  <rect x="36" y="20" width="4" height="12" rx="1" fill="${accent}" opacity=".8"/>
+  <rect x="42" y="20" width="6" height="12" rx="1" fill="${accent}" opacity=".8"/>
+  <rect x="50" y="20" width="3" height="12" rx="1" fill="${accent}" opacity=".8"/>
+  <rect x="16" y="42" width="6" height="8" rx="1" fill="${accent}" opacity=".5"/>
+  <rect x="24" y="42" width="3" height="8" rx="1" fill="${accent}" opacity=".5"/>
+  <rect x="29" y="42" width="5" height="8" rx="1" fill="${accent}" opacity=".5"/>
+  <rect x="36" y="42" width="4" height="8" rx="1" fill="${accent}" opacity=".5"/>
+  <rect x="42" y="42" width="6" height="8" rx="1" fill="${accent}" opacity=".5"/>
+  <rect x="50" y="42" width="3" height="8" rx="1" fill="${accent}" opacity=".5"/>
+  </svg>`;
+}
+
+function iconScanStack(t, size=80){
+  const {accent,shadow,surface,bg} = t;
+  const r = 14;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 80 80">
+  <rect x="4" y="4" width="72" height="72" rx="${r}" fill="${bg}" stroke="${shadow}" stroke-width="2"/>
+  <rect x="0" y="0" width="72" height="72" rx="${r}" fill="${surface}" stroke="${shadow}" stroke-width="1.5"/>
+  <rect x="12" y="16" width="56" height="48" rx="4" fill="${bg}" stroke="${shadow}" stroke-width="1"/>
+  <line x1="12" y1="40" x2="68" y2="40" stroke="${accent}" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="17" y="21" width="6" height="14" rx="1" fill="${accent}" opacity=".85"/>
+  <rect x="25" y="21" width="3" height="14" rx="1" fill="${accent}" opacity=".85"/>
+  <rect x="30" y="21" width="6" height="14" rx="1" fill="${accent}" opacity=".85"/>
+  <rect x="38" y="21" width="3" height="14" rx="1" fill="${accent}" opacity=".85"/>
+  <rect x="43" y="21" width="6" height="14" rx="1" fill="${accent}" opacity=".85"/>
+  <rect x="51" y="21" width="5" height="14" rx="1" fill="${accent}" opacity=".85"/>
+  <rect x="17" y="45" width="6" height="11" rx="1" fill="${accent}" opacity=".45"/>
+  <rect x="25" y="45" width="3" height="11" rx="1" fill="${accent}" opacity=".45"/>
+  <rect x="30" y="45" width="6" height="11" rx="1" fill="${accent}" opacity=".45"/>
+  <rect x="38" y="45" width="3" height="11" rx="1" fill="${accent}" opacity=".45"/>
+  <rect x="43" y="45" width="6" height="11" rx="1" fill="${accent}" opacity=".45"/>
+  <rect x="51" y="45" width="5" height="11" rx="1" fill="${accent}" opacity=".45"/>
+  </svg>`;
+}
+
+function wordmarkSvg(t, w=200, h=44){
+  const {accent,shadow,text} = t;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 200 44">
+  <text x="0" y="30" font-family="system-ui,sans-serif" font-size="26" font-weight="700" fill="${accent}">BRAD</text>
+  <rect x="0" y="34" width="80" height="2.5" rx="1" fill="${accent}" opacity=".5"/>
+  </svg>`;
+}
+
+const CONCEPTS = {
+  'arrow': {
+    title: 'Concept A — Arrow box',
+    desc: 'A bold diagonal arrow breaking out of a box with an offset shadow border. Represents forward motion and delivery. The arrow-escaping-the-box is instantly readable at all sizes.',
+    logo: logoArrowBox,
+    icon: iconArrowBox,
+  },
+  'route': {
+    title: 'Concept B — Route pin',
+    desc: 'A map pin with a directional arrow inside the dot, layered on a stacked card effect. Speaks directly to delivery routing and navigation.',
+    logo: logoRoutPin,
+    icon: iconRoutPin,
+  },
+  'scan': {
+    title: 'Concept C — Scan stack',
+    desc: 'Stacked package cards with a barcode and active scan line cutting across. Evokes scanning, packages, and the rider\'s daily workflow in one mark.',
+    logo: logoScanStack,
+    icon: iconScanStack,
+  },
+};
+
+function makeSvgString(svgFn, theme, size){
+  return svgFn(theme, size);
+}
+
+function downloadSvg(svgContent, filename){
+  // Apply rounded clip so SVG export matches HTML appearance
+  const size = 512, r = Math.round(size * 0.18);
+  const inner = svgContent.replace(/<svg[^>]*>/, '').replace('</svg>', '');
+  const clipped = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <defs><clipPath id="rc"><rect width="${size}" height="${size}" rx="${r}" ry="${r}"/></clipPath></defs>
+    <g clip-path="url(#rc)"><svg viewBox="0 0 80 80" width="${size}" height="${size}">${inner}</svg></g>
+  </svg>`;
+  const blob = new Blob([clipped], {type:'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadPng(svgString, filename, size){
+  const blob = new Blob([svgString], {type:'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const scale = 3;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * scale;
+    canvas.height = size * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    // Apply rounded rect clip directly on canvas
+    const r = size * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(size - r, 0);
+    ctx.quadraticCurveTo(size, 0, size, r);
+    ctx.lineTo(size, size - r);
+    ctx.quadraticCurveTo(size, size, size - r, size);
+    ctx.lineTo(r, size);
+    ctx.quadraticCurveTo(0, size, 0, size - r);
+    ctx.lineTo(0, r);
+    ctx.quadraticCurveTo(0, 0, r, 0);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(img, 0, 0, size, size);
+    canvas.toBlob(b=>{
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = filename; a.click();
+    },'image/png');
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+function render(){
+  const concept = CONCEPTS[activeConcept];
+  const isDarkBg = activeBg === 'dark';
+
+  let html = `
+  <div class="concept-section">
+    <p class="concept-title">${concept.title}</p>
+    <p class="concept-desc">${concept.desc}</p>
+  </div>
+
+  <p class="section-label">App icons — 1024×1024 source</p>
+  <div class="logo-grid" id="icon-grid"></div>
+
+  <p class="section-label">Wordmark lockup</p>
+  <div class="logo-grid" id="wordmark-grid"></div>
+
+  <p class="section-label">Standalone mark (splash / favicon)</p>
+  <div class="logo-grid" id="mark-grid"></div>
+  `;
+  document.getElementById('concept-area').innerHTML = html;
+
+  // Render icons
+  const iconGrid = document.getElementById('icon-grid');
+  Object.entries(THEMES).forEach(([key, theme]) => {
+    const isDark = key.includes('dark');
+    const cardBg = isDarkBg
+      ? (isDark ? CARD_BG[key] : '#1F2937')
+      : (isDark ? '#F9FAFB' : CARD_BG[key]);
+
+    const card = document.createElement('div');
+    card.className = 'logo-card';
+    card.style.background = cardBg;
+    card.style.gap = '10px';
+
+    const svgStr = concept.icon(theme, 80);
+    card.innerHTML = `
+      ${svgStr}
+      <div class="logo-name">${theme.name}</div>
+      <button class="dl-btn" data-key="${key}" data-type="icon">↓ Download PNG</button>
+      <button class="dl-btn" data-key="${key}" data-type="icon-svg" style="opacity:.7">↓ SVG</button>
+    `;
+    iconGrid.appendChild(card);
+  });
+
+  // Render wordmarks
+  const wmGrid = document.getElementById('wordmark-grid');
+  Object.entries(THEMES).forEach(([key, theme]) => {
+    const isDark = key.includes('dark');
+    const cardBg = isDarkBg
+      ? (isDark ? CARD_BG[key] : '#1F2937')
+      : (isDark ? '#F9FAFB' : CARD_BG[key]);
+
+    const card = document.createElement('div');
+    card.className = 'logo-card';
+    card.style.background = cardBg;
+
+    const iconSvg = concept.icon(theme, 40);
+    const wmSvg = wordmarkSvg(theme, 180, 44);
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px">
+        ${iconSvg}
+        ${wmSvg}
+      </div>
+      <div class="logo-name">${theme.name}</div>
+      <button class="dl-btn" data-key="${key}" data-type="wordmark">↓ Download PNG</button>
+    `;
+    wmGrid.appendChild(card);
+  });
+
+  // Render marks (larger, for splash)
+  const markGrid = document.getElementById('mark-grid');
+  Object.entries(THEMES).forEach(([key, theme]) => {
+    const isDark = key.includes('dark');
+    const cardBg = isDarkBg
+      ? (isDark ? CARD_BG[key] : '#1F2937')
+      : (isDark ? '#F9FAFB' : CARD_BG[key]);
+
+    const card = document.createElement('div');
+    card.className = 'logo-card';
+    card.style.background = cardBg;
+
+    const svgStr = concept.logo(theme, 100);
+    card.innerHTML = `
+      ${svgStr}
+      <div class="logo-name">${theme.name}</div>
+      <button class="dl-btn" data-key="${key}" data-type="mark">↓ Download PNG</button>
+      <button class="dl-btn" data-key="${key}" data-type="mark-svg" style="opacity:.7">↓ SVG</button>
+    `;
+    markGrid.appendChild(card);
+  });
+
+  // Wire download buttons
+  document.querySelectorAll('.dl-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      const type = btn.dataset.type;
+      const theme = THEMES[key];
+      const safeName = key.replace(/[^a-z0-9]/g,'_');
+
+      if(type === 'icon'){
+        const svg = concept.icon(theme, 512);
+        downloadPng(svg, `brad_icon_${safeName}.png`, 512);
+      } else if(type === 'icon-svg'){
+        downloadSvg(concept.icon(theme, 512), `brad_icon_${safeName}.svg`);
+      } else if(type === 'mark'){
+        const svg = concept.logo(theme, 512);
+        downloadPng(svg, `brad_mark_${safeName}.png`, 512);
+      } else if(type === 'mark-svg'){
+        downloadSvg(concept.logo(theme, 512), `brad_mark_${safeName}.svg`);
+      } else if(type === 'wordmark'){
+        // Compose icon + wordmark side by side
+        const t = theme;
+        const combined = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="120" viewBox="0 0 600 120">
+          <g transform="translate(0,10) scale(1.2)">${concept.icon(t, 80).replace(/<svg[^>]*>/,'').replace('</svg>','')}</g>
+          <text x="115" y="78" font-family="system-ui,sans-serif" font-size="62" font-weight="700" fill="${t.accent}">BRAD</text>
+        </svg>`;
+        downloadPng(combined, `brad_wordmark_${safeName}.png`, 600);
+      }
+    });
+  });
+}
+
+render();
+
+// Wire concept + bg buttons after render
+document.querySelectorAll('.controls .pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const label = btn.textContent.trim();
+    if(label === 'Light' || label === 'Dark') return;
+    if(label.includes('Arrow')) setConcept('arrow');
+    else if(label.includes('Route')) setConcept('route');
+    else if(label.includes('Scan')) setConcept('scan');
+  });
+});
+</script>

@@ -1,0 +1,161 @@
+# EZ Queue — Project Index
+
+**EZQueue** is a Flutter mobile app for digital queue ticket generation. Users walk through a multi-step form to select a department, services, user type, and enter personal info — then receive a generated queue ticket with a QR code they can save or share as a PDF.
+
+---
+
+## Tech Stack
+
+| Category | Technology |
+|---|---|
+| Framework | Flutter (Dart SDK `^3.9.2`) |
+| State Management | `flutter_riverpod` `^2.6.1` |
+| Navigation | `go_router` `^14.2.7` |
+| Typography | `google_fonts` `^6.2.1` (Inter + JetBrains Mono) |
+| Local Storage | `shared_preferences` `^2.3.3` |
+| PDF Generation | `pdf` `^3.11.1` + `printing` `^5.13.3` |
+| QR Codes | `qr_flutter` `^4.1.0` |
+| File/Share | `path_provider`, `share_plus`, `gal` |
+
+---
+
+## Directory Structure
+
+```
+lib/
+├── main.dart                        # App entry point, GoRouter config, EZQueueApp widget
+├── models/
+│   ├── queue_form_data.dart         # Form data model (department, services, userType, etc.)
+│   └── queue_ticket.dart            # Generated ticket model (ticketNumber, position, wait time)
+├── providers/
+│   ├── queue_form_provider.dart     # Riverpod StateNotifier for form data
+│   ├── queue_ticket_provider.dart   # Riverpod StateNotifier for active ticket
+│   └── theme_provider.dart          # Theme variant + mode providers with SharedPreferences persistence
+├── screens/
+│   ├── landing/                     # Landing page with logo + "Get Started" CTA
+│   ├── department_selection/        # Department & service multi-select
+│   ├── user_type_selection/         # User type picker + PWD toggle + ID number
+│   ├── personal_information/        # Full name & email form
+│   ├── confirmation/                # Review all details, edit before submitting
+│   ├── ticket_preview/              # Ticket card with QR code, save-to-gallery
+│   ├── queue_display/               # Live queue status display
+│   ├── cancel_queue/                # Cancel with reason + confirmation dialog
+│   └── theme_customizer/            # Theme variant & light/dark/system picker
+├── theme/
+│   ├── app_theme.dart               # AppThemeVariant enum, ThemeColors, AppTheme builder
+│   ├── colors.dart                  # EZColors: all color tokens for 5 variants + semantic colors
+│   ├── spacing.dart                 # EZSpacing: 8pt grid spacing + border radii
+│   └── typography.dart              # EZTypography: Inter text theme + JetBrains Mono for tickets
+├── utils/
+│   ├── pdf_generator.dart           # PDFGenerator: builds A4 ticket PDF with QR code
+│   └── theme_helpers.dart           # ThemeHelpers: button styles, text colors for light/dark
+└── widgets/
+    ├── app_logo.dart                # AppLogo: theme-variant-aware logo image
+    └── theme_customizer_button.dart # ThemeCustomizerButton: palette icon → theme customizer
+```
+
+---
+
+## Navigation Flow (GoRouter)
+
+```mermaid
+graph LR
+    A["/ <br> LandingPage"] --> B["/department-selection <br> DepartmentSelectionPage"]
+    B --> C["/user-type-selection <br> UserTypeSelectionPage"]
+    C --> D["/personal-information <br> PersonalInformationPage"]
+    D --> E["/confirmation <br> ConfirmationPage"]
+    E --> F["/ticket-preview <br> TicketPreviewPage"]
+    F --> G["/queue-display <br> QueueDisplayPage"]
+    G --> H["/cancel-queue <br> CancelQueuePage"]
+    A -.-> T["/theme-customizer <br> ThemeCustomizerPage"]
+```
+
+All routes are flat (no nesting). The [ThemeCustomizerButton](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/widgets/theme_customizer_button.dart#7-35) widget is overlaid on most pages, allowing access to `/theme-customizer` from anywhere.
+
+---
+
+## Data Models
+
+### [QueueFormData](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/models/queue_form_data.dart#3-59) — [queue_form_data.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/models/queue_form_data.dart)
+
+Immutable model with [copyWith](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/models/queue_form_data.dart#24-46). Tracks: `department`, `services` (list), `userType`, `idNumber`, `isPWD`, `pwdSpecification`, `fullName`, `email`. Has an `isComplete` getter for validation.
+
+### [QueueTicket](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/models/queue_ticket.dart#2-31) — [queue_ticket.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/models/queue_ticket.dart)
+
+Final generated ticket: `ticketNumber`, `department`, `services`, `userType`, `idNumber`, `fullName`, `email`, `isPWD`, `pwdSpecification`, `createdAt`, `queuePosition`, `estimatedWaitMinutes`.
+
+---
+
+## State Management (Riverpod)
+
+| Provider | Type | Purpose |
+|---|---|---|
+| `queueFormProvider` | `StateNotifierProvider<QueueFormNotifier, QueueFormData>` | Multi-step form state |
+| `queueTicketProvider` | `StateNotifierProvider<QueueTicketNotifier, QueueTicket?>` | Active ticket |
+| `themeVariantProvider` | `StateNotifierProvider<ThemeVariantNotifier, AppThemeVariant>` | Selected theme variant (persisted) |
+| `themeModeProvider` | `StateNotifierProvider<ThemeModeNotifier, ThemeMode>` | Light/Dark/System (persisted) |
+| `appThemeProvider` | `Provider<ThemeData>` | Derived — combines variant + mode → `ThemeData` |
+| `brightnessProvider` | `Provider<Brightness>` | Derived — current brightness |
+
+---
+
+## Theming System
+
+### 5 Theme Variants (`AppThemeVariant`)
+
+| Variant | Light BG | Primary | Accent | Mood |
+|---|---|---|---|---|
+| **Pure & Bold** | `#FFFFFF` | `#111827` | `#2563EB` | Clean minimal |
+| **Techy** | `#0D0F1A` | `#4D7FFF` | `#00E5C0` | Dark futuristic |
+| **Friendly** | `#FFF8F2` | `#FF6B35` | `#FFD166` | Warm approachable |
+| **Corporate** | `#FFFFFF` | `#1E1E2E` | `#6C63FF` | Professional |
+| **Playful** | `#1A0A2E` | `#FF4DAF` | `#B44FFF` | Vibrant creative |
+
+Each variant has full light + dark mode color sets. Theme preference is persisted via `SharedPreferences`.
+
+---
+
+## Key Screens
+
+| # | Screen | File | Function |
+|---|---|---|---|
+| 1 | **Landing** | [landing_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/landing/landing_page.dart) | Logo display + "Get Started" button |
+| 2 | **Department Selection** | [department_selection_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/department_selection/department_selection_page.dart) | Pick dept + multi-select services |
+| 3 | **User Type Selection** | [user_type_selection_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/user_type_selection/user_type_selection_page.dart) | User type, PWD toggle, ID number |
+| 4 | **Personal Info** | [personal_information_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/personal_information/personal_information_page.dart) | Full name + email with validation |
+| 5 | **Confirmation** | [confirmation_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/confirmation/confirmation_page.dart) | Review all details, edit, generate ticket |
+| 6 | **Ticket Preview** | [ticket_preview_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/ticket_preview/ticket_preview_page.dart) | QR code ticket card, save to gallery |
+| 7 | **Queue Display** | [queue_display_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/queue_display/queue_display_page.dart) | Queue status dashboard |
+| 8 | **Cancel Queue** | [cancel_queue_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/cancel_queue/cancel_queue_page.dart) | Cancel with reason + confirmation |
+| 9 | **Theme Customizer** | [theme_customizer_page.dart](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/screens/theme_customizer/theme_customizer_page.dart) | Variant + mode selector with preview |
+
+---
+
+## Utilities
+
+- **[PDFGenerator](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/utils/pdf_generator.dart#14-192)** — Generates an A4 PDF ticket with QR code, detail rows, and fallback to save+share if print preview unavailable.
+- **[ThemeHelpers](file:///c:/Users/Acer/StudioProjects/ez_queue/lib/utils/theme_helpers.dart#5-97)** — Static helpers for theme-aware button styles, text colors (`onPrimary`, `onSecondary`, `onSurface`), and brightness-adaptive button text.
+
+---
+
+## Assets
+
+7 image files in `assets/photos/`:
+- `logo_for_dark_mode_no_bg.png` / `logo_for_light_mode_no_bg.png` — Main logos
+- `dark_mode_icon.png` / `light_mode_icon.png` — Icons with background
+- `dark_mode_icon_no_bg.png` / `light_mode_icon_no_bg.png` — Icons without background
+- `ic_launcher.png` — App launcher icon
+
+---
+
+## Stats
+
+| Metric | Value |
+|---|---|
+| Dart source files | 24 (23 in `lib/` + 1 test) |
+| Screens | 9 |
+| Models | 2 |
+| Providers | 6 |
+| Shared widgets | 2 |
+| Theme variants | 5 |
+| Total lines of Dart | ~2,800 |
