@@ -266,8 +266,22 @@ class PackagesNotifier extends _$PackagesNotifier {
     // Optimistic UI update
     state = state.copyWith(packages: list);
 
-    // SQLite Persistence
-    await _dbHelper.updateSortOrders(list.map((p) => p.id).toList());
+    // SQLite Persistence - Map the relative reordered list back to the full list
+    final allPackages = await _dbHelper.getPackages();
+    final filteredIds = list.map((p) => p.id).toSet();
+
+    final newAllPackages = <Package>[];
+    int filteredIdx = 0;
+    for (final p in allPackages) {
+      if (filteredIds.contains(p.id)) {
+        newAllPackages.add(list[filteredIdx]);
+        filteredIdx++;
+      } else {
+        newAllPackages.add(p);
+      }
+    }
+
+    await _dbHelper.updateSortOrders(newAllPackages.map((p) => p.id).toList());
     await refresh();
   }
 

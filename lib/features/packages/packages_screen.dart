@@ -21,7 +21,6 @@ class PackagesScreen extends ConsumerStatefulWidget {
 
 class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   final TextEditingController _searchController = TextEditingController();
-  bool _isReorderMode = false;
   double? _fabX;
   double? _fabY;
 
@@ -64,15 +63,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: Icon(_isReorderMode ? Icons.check_rounded : Icons.sort_rounded),
-            tooltip: _isReorderMode ? 'Save Order' : 'Reorder Mode',
-            onPressed: () {
-              setState(() {
-                _isReorderMode = !_isReorderMode;
-              });
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh',
@@ -269,42 +259,28 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   }
 
   Widget _buildPackageList(List<Package> packages) {
-    if (_isReorderMode) {
-      return ReorderableListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: packages.length,
-        onReorder: (oldIndex, newIndex) {
-          ref.read(packagesNotifierProvider.notifier).reorder(oldIndex, newIndex);
-        },
-        itemBuilder: (context, index) {
-          final pkg = packages[index];
-          return PackageCard(
-            key: ValueKey(pkg.id),
-            package: pkg,
-            showDragHandle: true,
-          );
-        },
-        proxyDecorator: (child, index, animation) {
-          return ScaleTransition(
-            scale: animation.drive(Tween(begin: 1.0, end: 1.03)),
-            child: Material(
-              color: Colors.transparent,
-              elevation: 0,
-              child: child,
-            ),
-          );
-        },
-      );
-    }
-
-    return ListView.builder(
+    return ReorderableListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: packages.length,
+      onReorder: (oldIndex, newIndex) {
+        ref.read(packagesNotifierProvider.notifier).reorder(oldIndex, newIndex);
+      },
       itemBuilder: (context, index) {
         final pkg = packages[index];
         return PackageCard(
           key: ValueKey(pkg.id),
           package: pkg,
+          showDragHandle: true,
+        );
+      },
+      proxyDecorator: (child, index, animation) {
+        return ScaleTransition(
+          scale: animation.drive(Tween(begin: 1.0, end: 1.03)),
+          child: Material(
+            color: Colors.transparent,
+            elevation: 0,
+            child: child,
+          ),
         );
       },
     );
