@@ -112,3 +112,73 @@ class TimerNotifier extends _$TimerNotifier {
     await ref.read(notificationServiceProvider).showTimerDone();
   }
 }
+
+@riverpod
+class BottomTimerNotifier extends _$BottomTimerNotifier {
+  Timer? _ticker;
+
+  @override
+  TimerState build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final savedMins = prefs.getInt('timer_duration_minutes_bottom') ?? 30;
+    final d = Duration(minutes: savedMins);
+    return TimerState(
+      duration: d,
+      remaining: d,
+      isRunning: false,
+    );
+  }
+
+  void start() {
+    if (state.isRunning) return;
+
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (state.remaining.inSeconds <= 0) {
+        pause();
+        _onTimerDone();
+      } else {
+        state = state.copyWith(
+          remaining: state.remaining - const Duration(seconds: 1),
+        );
+      }
+    });
+
+    state = state.copyWith(isRunning: true);
+  }
+
+  void pause() {
+    _ticker?.cancel();
+    _ticker = null;
+    state = state.copyWith(isRunning: false);
+  }
+
+  void reset() {
+    pause();
+    state = state.copyWith(remaining: state.duration);
+  }
+
+  void addMinutes(int minutes) {
+    final current = state.remaining;
+    final target = current + Duration(minutes: minutes);
+    state = state.copyWith(remaining: target);
+  }
+
+  void setDuration(int minutes) {
+    pause();
+    final d = Duration(minutes: minutes);
+    state = TimerState(
+      duration: d,
+      remaining: d,
+      isRunning: false,
+    );
+  }
+
+  Future<void> _onTimerDone() async {
+    // Vibrate device
+    await HapticFeedback.vibrate();
+    
+    // Show notification (works completely offline)
+    await ref.read(notificationServiceProvider).showTimerDone();
+  }
+}

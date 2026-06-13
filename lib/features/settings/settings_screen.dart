@@ -311,10 +311,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Widget Floating Overlay', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const Text('Full-Screen Shift Timers', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           ElevatedButton(
                             onPressed: () {
-                              // Toggle displaying floating overlay
+                              // Toggle displaying full-screen timers
                               final isShown = TimerOverlayManager.instance.isShown;
                               if (isShown) {
                                 TimerOverlayManager.instance.hide();
@@ -323,7 +323,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               }
                               setState(() {});
                             },
-                            child: Text(TimerOverlayManager.instance.isShown ? 'HIDE TIMER' : 'SHOW TIMER'),
+                            child: Text(TimerOverlayManager.instance.isShown ? 'CLOSE TIMERS' : 'OPEN TIMERS'),
                           ),
                         ],
                       ),

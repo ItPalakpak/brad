@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../core/database/db_helper.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../map/pin_picker_sheet.dart';
 import 'packages_provider.dart';
 
 class PackageForm extends ConsumerStatefulWidget {
@@ -88,6 +90,28 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     _extraAmountController.dispose();
     _extraLabelController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickLocationOnMap() async {
+    final initialPos = _lat != null && _lng != null
+        ? LatLng(_lat!, _lng!)
+        : const LatLng(8.4542, 124.6319); // Default CDO coords
+
+    final LatLng? pickedLocation = await showModalBottomSheet<LatLng>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return PinPickerSheet(initialLocation: initialPos);
+      },
+    );
+
+    if (pickedLocation != null) {
+      setState(() {
+        _lat = pickedLocation.latitude;
+        _lng = pickedLocation.longitude;
+      });
+    }
   }
 
   double _getGrandTotal() {
@@ -302,6 +326,47 @@ class _PackageFormState extends ConsumerState<PackageForm> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: tokens.surfaceAlt,
+                border: Border.all(color: tokens.border, width: 1.5),
+                borderRadius: BorderRadius.zero,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _lat != null && _lng != null ? Icons.location_on_rounded : Icons.location_off_rounded,
+                    color: _lat != null && _lng != null ? tokens.accent : tokens.textSubtle,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _lat != null && _lng != null ? 'Location Coordinates Pinned' : 'No Location Pinned',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        if (_lat != null && _lng != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '${_lat!.toStringAsFixed(6)}, ${_lng!.toStringAsFixed(6)}',
+                            style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, color: tokens.textSubtle),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _pickLocationOnMap,
+                    icon: Icon(_lat != null && _lng != null ? Icons.edit_location_alt_rounded : Icons.pin_drop_rounded, size: 16),
+                    label: Text(_lat != null && _lng != null ? 'CHANGE PIN' : 'PIN ON MAP', style: const TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 24),
 

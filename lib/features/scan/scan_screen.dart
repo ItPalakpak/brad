@@ -17,13 +17,9 @@ class ScanScreen extends ConsumerStatefulWidget {
   ConsumerState<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends ConsumerState<ScanScreen> with SingleTickerProviderStateMixin {
+class _ScanScreenState extends ConsumerState<ScanScreen> {
   late MobileScannerController _controller;
-  late AnimationController _animController;
-  late Animation<double> _pulseAnimation;
   bool _isProcessingScan = false;
-  double? _scannerX;
-  double? _scannerY;
 
   @override
   void initState() {
@@ -32,21 +28,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> with SingleTickerProvid
       detectionSpeed: DetectionSpeed.noDuplicates,
       returnImage: false,
     );
-
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true);
-
-    _pulseAnimation = Tween<double>(begin: 0.9, end: 1.1).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
-    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
-    _animController.dispose();
     super.dispose();
   }
 
@@ -223,8 +209,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> with SingleTickerProvid
     final size = MediaQuery.of(context).size;
     final maxW = size.width - 250;
     final maxH = size.height - 250 - 100; // safety margin for bottom/top appbars
-    _scannerX = _scannerX?.clamp(0.0, maxW) ?? (size.width - 250) / 2;
-    _scannerY = _scannerY?.clamp(0.0, maxH) ?? (size.height - 350) / 2;
 
     return Scaffold(
       appBar: AppBar(
@@ -304,52 +288,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> with SingleTickerProvid
                 ),
 
                 // Transparent Cutout for Scanner View (Draggable)
-                Positioned(
-                  left: _scannerX,
-                  top: _scannerY,
-                  child: GestureDetector(
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _scannerX = _scannerX! + details.delta.dx;
-                        _scannerY = _scannerY! + details.delta.dy;
-                      });
-                    },
-                    child: ScaleTransition(
-                      scale: _pulseAnimation,
-                      child: Container(
-                        width: 250,
-                        height: 250,
-                        decoration: const BoxDecoration(
-                          color: Colors.transparent,
-                        ),
-                        child: Stack(
-                          children: [
-                            // Reticle corner brackets
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              child: _buildCorner(tokens.accent, top: true, left: true),
-                            ),
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              child: _buildCorner(tokens.accent, top: true, left: false),
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              left: 0,
-                              child: _buildCorner(tokens.accent, top: false, left: true),
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: _buildCorner(tokens.accent, top: false, left: false),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                DraggableScannerCutout(
+                  maxW: maxW,
+                  maxH: maxH,
                 ),
 
                 // Informative Label Overlay
@@ -382,6 +323,47 @@ class _ScanScreenState extends ConsumerState<ScanScreen> with SingleTickerProvid
     );
   }
 
+}
+
+class DraggableScannerCutout extends StatefulWidget {
+  final double maxW;
+  final double maxH;
+
+  const DraggableScannerCutout({
+    super.key,
+    required this.maxW,
+    required this.maxH,
+  });
+
+  @override
+  State<DraggableScannerCutout> createState() => _DraggableScannerCutoutState();
+}
+
+class _DraggableScannerCutoutState extends State<DraggableScannerCutout> with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+  late Animation<double> _pulseAnimation;
+  double? _scannerX;
+  double? _scannerY;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 0.9, end: 1.1).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
   Widget _buildCorner(Color color, {required bool top, required bool left}) {
     const double length = 24.0;
     const double thickness = 4.0;
@@ -410,6 +392,75 @@ class _ScanScreenState extends ConsumerState<ScanScreen> with SingleTickerProvid
             child: Container(
               width: thickness,
               color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    
+    final scannerX = (_scannerX ?? widget.maxW / 2).clamp(0.0, widget.maxW);
+    final scannerY = (_scannerY ?? widget.maxH / 2).clamp(0.0, widget.maxH);
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Transform.translate(
+            offset: Offset(scannerX, scannerY),
+            child: RepaintBoundary(
+              child: SizedBox(
+                width: 250,
+                height: 250,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      final activeX = _scannerX ?? (widget.maxW / 2);
+                      final activeY = _scannerY ?? (widget.maxH / 2);
+                      _scannerX = (activeX + details.delta.dx).clamp(0.0, widget.maxW);
+                      _scannerY = (activeY + details.delta.dy).clamp(0.0, widget.maxH);
+                    });
+                  },
+                  child: ScaleTransition(
+                    scale: _pulseAnimation,
+                    child: Container(
+                      width: 250,
+                      height: 250,
+                      decoration: const BoxDecoration(
+                        color: Colors.transparent,
+                      ),
+                      child: Stack(
+                        children: [
+                          // Reticle corner brackets
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: _buildCorner(tokens.accent, top: true, left: true),
+                          ),
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: _buildCorner(tokens.accent, top: true, left: false),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            child: _buildCorner(tokens.accent, top: false, left: true),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: _buildCorner(tokens.accent, top: false, left: false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ],

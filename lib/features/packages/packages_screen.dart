@@ -21,8 +21,6 @@ class PackagesScreen extends ConsumerStatefulWidget {
 
 class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   final TextEditingController _searchController = TextEditingController();
-  double? _fabX;
-  double? _fabY;
 
   @override
   void initState() {
@@ -75,12 +73,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
           final maxW = constraints.maxWidth;
           final maxH = constraints.maxHeight;
 
-          // Default FAB position at bottom right (FAB is 56x56, plus shadow offset/padding)
-          final defaultX = maxW - 72.0;
-          final defaultY = maxH - 72.0;
-
-          final fabX = _fabX ?? defaultX;
-          final fabY = _fabY ?? defaultY;
+          // Default FAB position boundary calculations
 
           return Stack(
             children: [
@@ -185,30 +178,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   _buildSummaryBar(tokens, state.summary),
                 ],
               ),
-              Positioned(
-                left: fabX,
-                top: fabY,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    setState(() {
-                      _fabX = (fabX + details.delta.dx).clamp(16.0, maxW - 72.0);
-                      _fabY = (fabY + details.delta.dy).clamp(16.0, maxH - 72.0);
-                    });
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.zero,
-                      boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
-                    ),
-                    child: FloatingActionButton(
-                      onPressed: () {
-                        // Open Scan tab or navigate to new package form
-                        context.push('/scan');
-                      },
-                      child: const Icon(Icons.qr_code_scanner_rounded),
-                    ),
-                  ),
-                ),
+              DraggableScanFab(
+                maxW: maxW,
+                maxH: maxH,
               ),
             ],
           );
@@ -437,6 +409,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                           } else {
                                             tempSelected.remove(status);
                                           }
+                                          notifier.setStatusFilters(tempSelected);
                                         });
                                       },
                                     );
@@ -453,6 +426,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           onPressed: () {
                             setState(() {
                               tempSelected.clear();
+                              notifier.setStatusFilters(tempSelected);
                             });
                           },
                           child: const Text('RESET'),
@@ -460,10 +434,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                         const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: () {
-                            notifier.setStatusFilters(tempSelected);
                             Navigator.pop(context);
                           },
-                          child: const Text('APPLY'),
+                          child: const Text('DONE'),
                         ),
                       ],
                     ),
@@ -533,6 +506,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                           } else {
                                             tempSelected.remove(brgy);
                                           }
+                                          notifier.setBarangayFilters(tempSelected);
                                         });
                                       },
                                     );
@@ -549,6 +523,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           onPressed: () {
                             setState(() {
                               tempSelected.clear();
+                              notifier.setBarangayFilters(tempSelected);
                             });
                           },
                           child: const Text('RESET'),
@@ -556,10 +531,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                         const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: () {
-                            notifier.setBarangayFilters(tempSelected);
                             Navigator.pop(context);
                           },
-                          child: const Text('APPLY'),
+                          child: const Text('DONE'),
                         ),
                       ],
                     ),
@@ -632,6 +606,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                           } else {
                                             tempSelected.remove(type);
                                           }
+                                          notifier.setPaymentTypeFilters(tempSelected);
                                         });
                                       },
                                     );
@@ -648,6 +623,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           onPressed: () {
                             setState(() {
                               tempSelected.clear();
+                              notifier.setPaymentTypeFilters(tempSelected);
                             });
                           },
                           child: const Text('RESET'),
@@ -655,10 +631,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                         const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: () {
-                            notifier.setPaymentTypeFilters(tempSelected);
                             Navigator.pop(context);
                           },
-                          child: const Text('APPLY'),
+                          child: const Text('DONE'),
                         ),
                       ],
                     ),
@@ -669,6 +644,76 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
           },
         );
       },
+    );
+  }
+}
+
+class DraggableScanFab extends StatefulWidget {
+  final double maxW;
+  final double maxH;
+
+  const DraggableScanFab({
+    super.key,
+    required this.maxW,
+    required this.maxH,
+  });
+
+  @override
+  State<DraggableScanFab> createState() => _DraggableScanFabState();
+}
+
+class _DraggableScanFabState extends State<DraggableScanFab> {
+  double? _fabX;
+  double? _fabY;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    
+    // Default FAB position at bottom right (FAB is 56x56, plus shadow offset/padding)
+    final defaultX = widget.maxW - 72.0;
+    final defaultY = widget.maxH - 72.0;
+
+    final fabX = (_fabX ?? defaultX).clamp(16.0, widget.maxW - 72.0);
+    final fabY = (_fabY ?? defaultY).clamp(16.0, widget.maxH - 72.0);
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Transform.translate(
+            offset: Offset(fabX, fabY),
+            child: RepaintBoundary(
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      final activeX = _fabX ?? defaultX;
+                      final activeY = _fabY ?? defaultY;
+                      _fabX = (activeX + details.delta.dx).clamp(16.0, widget.maxW - 72.0);
+                      _fabY = (activeY + details.delta.dy).clamp(16.0, widget.maxH - 72.0);
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.zero,
+                      boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                    ),
+                    child: FloatingActionButton(
+                      onPressed: () {
+                        // Open Scan tab or navigate to new package form
+                        context.push('/scan');
+                      },
+                      child: const Icon(Icons.qr_code_scanner_rounded),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
