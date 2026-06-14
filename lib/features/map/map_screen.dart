@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geocoding/geocoding.dart' as geo;
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import 'package:geolocator/geolocator.dart';
@@ -31,10 +32,11 @@ class MapScreen extends ConsumerStatefulWidget {
 class _MapScreenState extends ConsumerState<MapScreen> {
   late MapController _mapController;
   bool _isLocating = false;
+  bool _isMapReady = false;
   
   // Pin Mode States
   bool _isPinMode = false;
-  LatLng _mapCenter = const LatLng(8.4542, 124.6319); // Default CDO Coords
+  LatLng _mapCenter = const LatLng(8.6074, 124.8957); // Default Claveria Coords
 
   @override
   void initState() {
@@ -49,6 +51,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   Future<void> _centerOnMe() async {
+    if (!_isMapReady) return;
+
     setState(() {
       _isLocating = true;
     });
@@ -187,6 +191,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
+  String _formatDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.toStringAsFixed(0)} m';
+    } else {
+      final km = meters / 1000.0;
+      return '${km.toStringAsFixed(1)} km';
+    }
+  }
+
   void _showNewPinForm(LatLng pos) {
     final trackingController = TextEditingController();
     final nameController = TextEditingController();
@@ -276,13 +289,33 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           final tracking = trackingController.text.trim();
                           final name = nameController.text.trim();
 
+                          String finalStreet = '';
+                          String finalBarangay = '';
+                          String finalCity = 'Claveria';
+                          try {
+                            final placemarks = await geo.placemarkFromCoordinates(pos.latitude, pos.longitude);
+                            if (placemarks.isNotEmpty) {
+                              final place = placemarks.first;
+                              finalBarangay = place.subLocality ?? '';
+                              finalCity = place.locality ?? 'Claveria';
+                              finalStreet = place.street ?? '';
+                              if (finalStreet == finalBarangay || finalStreet == finalCity) {
+                                finalStreet = place.thoroughfare ?? '';
+                              }
+                            }
+                          } catch (e) {
+                            debugPrint('Geocoding error in map pinning: $e');
+                          }
+
                           final newPkg = Package(
                             id: const Uuid().v4(),
                             trackingNumber: tracking,
                             receiverName: name.isEmpty ? null : name,
                             lat: pos.latitude,
                             lng: pos.longitude,
-                            city: 'Cagayan de Oro',
+                            street: finalStreet.isEmpty ? null : finalStreet,
+                            barangay: finalBarangay.isEmpty ? null : finalBarangay,
+                            city: finalCity,
                             paymentType: 'cod_cash',
                             codCash: 0.0,
                             codDigital: 0.0,
@@ -328,7 +361,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         final target = LatLng(pos.latitude, pos.longitude);
         ref.read(mapStateNotifierProvider.notifier).updateUserPosition(target);
         // Center the map on user location the first time it loads
-        if (prev == null || !prev.hasValue) {
+        if (_isMapReady && (prev == null || !prev.hasValue)) {
           _mapController.move(target, 15.0);
         }
       });
@@ -378,7 +411,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   child: FlutterMap(
                     mapController: _mapController,
                     options: MapOptions(
-                      initialCenter: const LatLng(8.4542, 124.6319), // CDO Coords
+                      initialCenter: mapState.userPosition ?? const LatLng(8.6074, 124.8957), // User Pos or Claveria Coords
                       initialZoom: 13.0,
                       maxZoom: 18,
                       minZoom: 10,
@@ -386,6 +419,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         if (hasGesture) {
                           _mapCenter = position.center;
                         }
+                      },
+                      onMapReady: () {
+                        setState(() {
+                          _isMapReady = true;
+                        });
+                        _centerOnMe();
                       },
                     ),
                     children: [
@@ -398,6 +437,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           // Fail silently without crash
                         },
                       ),
+
+                      // Route guidance: line to nearest pending package
+                      if (mapState.userPosition != null && mapState.nearestPackage != null)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: mapState.routePoints.isNotEmpty
+                                  ? mapState.routePoints
+                                  : [
+                                      mapState.userPosition!,
+                                      LatLng(mapState.nearestPackage!.lat!, mapState.nearestPackage!.lng!),
+                                    ],
+                              color: tokens.accent,
+                              strokeWidth: 3.5,
+                              pattern: StrokePattern.dashed(segments: [6, 6]),
+                            ),
+                          ],
+                        ),
 
                       // Package Markers
                       MarkerLayer(
@@ -516,6 +573,105 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     ),
                   ),
                 ],
+
+                // Nearest Pending Package Info Card (Bottom-left)
+                if (!_isPinMode && mapState.userPosition != null && mapState.nearestPackage != null)
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    right: 80, // Leave space for center-on-me floating action button
+                    child: OffsetShadowCard(
+                      backgroundColor: tokens.surface,
+                      shadowColor: tokens.border,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      onTap: () {
+                        _showPackageMiniCard(mapState.nearestPackage!);
+                      },
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: tokens.accent.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Transform.rotate(
+                              angle: 45 * 3.14159 / 180, // Point it towards top-right
+                              child: Icon(Icons.navigation_outlined, color: tokens.accent, size: 20),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      'NEAREST:',
+                                      style: TextStyle(
+                                        color: tokens.textMuted,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.0,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        mapState.nearestPackage!.trackingNumber,
+                                        style: const TextStyle(
+                                          fontFamily: 'JetBrains Mono',
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  mapState.nearestPackage!.receiverName ?? 'Unnamed Receiver',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                _formatDistance(mapState.roadDistance ?? 0.0),
+                                style: TextStyle(
+                                  color: tokens.accent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                mapState.roadEta != null
+                                    ? '~${mapState.roadEta} min'
+                                    : '-- min',
+                                style: TextStyle(
+                                  color: tokens.textSubtle,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // Centering GPS button wrapped in offset shadow
                 if (!_isPinMode)

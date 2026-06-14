@@ -6,7 +6,6 @@ import '../features/packages/package_detail_screen.dart';
 import '../features/map/map_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../core/theme/app_theme.dart';
-import '../shared/widgets/offset_shadow_card.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 final shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -112,53 +111,34 @@ class MainNavigationShell extends StatelessWidget {
     final tokens = context.tokens;
     final isSelected = navigationShell.currentIndex == index;
 
-    if (isSelected) {
-      return OffsetShadowCard(
-        shadowOffset: const Offset(1.5, 1.5),
-        borderWidth: 1.5,
-        borderRadius: BorderRadius.zero,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        backgroundColor: tokens.accent,
-        shadowColor: tokens.border,
-        onTap: () => navigationShell.goBranch(index),
-        child: Row(
+    return InkWell(
+      onTap: () => navigationShell.goBranch(index),
+      borderRadius: BorderRadius.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: tokens.textInvert),
-            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Icon(
+                icon,
+                size: 20,
+                color: isSelected ? tokens.accent : tokens.textSubtle,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: tokens.textInvert,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
+                color: isSelected ? tokens.text : tokens.textSubtle,
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               ),
             ),
           ],
         ),
-      );
-    } else {
-      return InkWell(
-        onTap: () => navigationShell.goBranch(index),
-        borderRadius: BorderRadius.zero,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 20, color: tokens.textSubtle),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: tokens.textSubtle,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+      ),
+    );
   }
 }

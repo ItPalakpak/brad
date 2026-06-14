@@ -22,6 +22,8 @@ class PackagesState {
   final List<String> uniqueCities;
   final List<String> uniqueStatuses;
   final List<String> uniquePaymentTypes;
+  final List<String> uniqueStreets;
+  final List<String> uniqueZones;
 
   PackagesState({
     required this.packages,
@@ -35,6 +37,8 @@ class PackagesState {
     required this.uniqueCities,
     this.uniqueStatuses = const [],
     this.uniquePaymentTypes = const [],
+    this.uniqueStreets = const [],
+    this.uniqueZones = const [],
   });
 
   PackagesState copyWith({
@@ -49,6 +53,8 @@ class PackagesState {
     List<String>? uniqueCities,
     List<String>? uniqueStatuses,
     List<String>? uniquePaymentTypes,
+    List<String>? uniqueStreets,
+    List<String>? uniqueZones,
   }) {
     return PackagesState(
       packages: packages ?? this.packages,
@@ -62,6 +68,8 @@ class PackagesState {
       uniqueCities: uniqueCities ?? this.uniqueCities,
       uniqueStatuses: uniqueStatuses ?? this.uniqueStatuses,
       uniquePaymentTypes: uniquePaymentTypes ?? this.uniquePaymentTypes,
+      uniqueStreets: uniqueStreets ?? this.uniqueStreets,
+      uniqueZones: uniqueZones ?? this.uniqueZones,
     );
   }
 }
@@ -85,6 +93,8 @@ class PackagesNotifier extends _$PackagesNotifier {
       paymentTypeFilters: [],
       uniqueStatuses: [],
       uniquePaymentTypes: [],
+      uniqueStreets: [],
+      uniqueZones: [],
     );
   }
 
@@ -103,6 +113,8 @@ class PackagesNotifier extends _$PackagesNotifier {
       final cities = await _dbHelper.getUniqueCities();
       final statuses = await _dbHelper.getUniqueStatuses();
       final paymentTypes = await _dbHelper.getUniquePaymentTypes();
+      final streets = await _dbHelper.getUniqueStreets();
+      final zones = await _dbHelper.getUniqueZones();
 
       state = state.copyWith(
         packages: list,
@@ -111,6 +123,8 @@ class PackagesNotifier extends _$PackagesNotifier {
         uniqueCities: cities,
         uniqueStatuses: statuses,
         uniquePaymentTypes: paymentTypes,
+        uniqueStreets: streets,
+        uniqueZones: zones,
         isLoading: false,
       );
     } catch (_) {

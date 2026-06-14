@@ -43,6 +43,18 @@ class DraggableTimerOverlay extends ConsumerStatefulWidget {
 }
 
 class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
+  bool _pickerOpenA = false;
+  bool _pickerOpenB = false;
+  final TextEditingController _customControllerA = TextEditingController();
+  final TextEditingController _customControllerB = TextEditingController();
+
+  @override
+  void dispose() {
+    _customControllerA.dispose();
+    _customControllerB.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final timerState1 = ref.watch(timerNotifierProvider);
@@ -71,6 +83,9 @@ class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
                       activeColor: tokens.accent,
                       inactiveColor: tokens.accent.withValues(alpha: 0.05),
                       tokens: tokens,
+                      pickerOpen: _pickerOpenA,
+                      customController: _customControllerA,
+                      onTogglePicker: () => setState(() => _pickerOpenA = !_pickerOpenA),
                     ),
                   ),
                   
@@ -89,6 +104,9 @@ class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
                       activeColor: AppStatusColors.warning,
                       inactiveColor: AppStatusColors.warning.withValues(alpha: 0.05),
                       tokens: tokens,
+                      pickerOpen: _pickerOpenB,
+                      customController: _customControllerB,
+                      onTogglePicker: () => setState(() => _pickerOpenB = !_pickerOpenB),
                     ),
                   ),
                 ],
@@ -121,6 +139,9 @@ class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
     required Color activeColor,
     required Color inactiveColor,
     required AppColorTokens tokens,
+    required bool pickerOpen,
+    required TextEditingController customController,
+    required VoidCallback onTogglePicker,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -131,10 +152,11 @@ class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -189,43 +211,30 @@ class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
                   _buildActionChip(label: '+10 Min', onTap: () => notifier.addMinutes(10), tokens: tokens),
                   const SizedBox(width: 16),
                   
-                  // Duration Presets Dropdown
-                  DropdownButtonHideUnderline(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: tokens.surface,
-                        border: Border.all(color: tokens.border, width: 1.5),
-                        borderRadius: BorderRadius.zero,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: DropdownButton<int>(
-                        value: state.duration.inMinutes,
-                        icon: Icon(Icons.arrow_drop_down_rounded, color: tokens.text),
-                        dropdownColor: tokens.surface,
-                        style: TextStyle(
-                          color: tokens.text,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        onChanged: (val) {
-                          if (val != null) {
-                            notifier.setDuration(val);
-                          }
-                        },
-                        items: const [
-                          DropdownMenuItem(value: 5, child: Text('5 Mins')),
-                          DropdownMenuItem(value: 15, child: Text('15 Mins')),
-                          DropdownMenuItem(value: 30, child: Text('30 Mins')),
-                          DropdownMenuItem(value: 45, child: Text('45 Mins')),
-                          DropdownMenuItem(value: 60, child: Text('60 Mins')),
-                          DropdownMenuItem(value: 120, child: Text('2 Hours')),
-                        ],
-                      ),
-                    ),
+                  // Duration Presets Combo Selector
+                  _buildActionChip(
+                    label: _formatDurationLabel(state.duration.inMinutes),
+                    onTap: onTogglePicker,
+                    tokens: tokens,
                   ),
                 ],
               ),
+
+              // Inline Duration Picker (expands below chips)
+              if (pickerOpen) ...[
+                const SizedBox(height: 12),
+                _buildInlineDurationPicker(
+                  currentMinutes: state.duration.inMinutes,
+                  customController: customController,
+                  onSelected: (val) {
+                    notifier.setDuration(val);
+                    onTogglePicker();
+                  },
+                  tokens: tokens,
+                ),
+              ],
             ],
+          ),
           ),
         );
       },
@@ -294,6 +303,126 @@ class _DraggableTimerOverlayState extends ConsumerState<DraggableTimerOverlay> {
             fontSize: 11,
           ),
         ),
+      ),
+    );
+  }
+
+  String _formatDurationLabel(int minutes) {
+    if (minutes >= 60 && minutes % 60 == 0) {
+      final hours = minutes ~/ 60;
+      return hours == 1 ? '1 Hour' : '$hours Hours';
+    }
+    return '$minutes Mins';
+  }
+
+  Widget _buildInlineDurationPicker({
+    required int currentMinutes,
+    required TextEditingController customController,
+    required ValueChanged<int> onSelected,
+    required AppColorTokens tokens,
+  }) {
+    const presets = [5, 15, 30, 45, 60, 120];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface.withValues(alpha: 0.1),
+        border: Border.all(color: tokens.border.withValues(alpha: 0.3), width: 1),
+        borderRadius: BorderRadius.zero,
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Preset duration chips
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: presets.map((mins) {
+              final isActive = currentMinutes == mins;
+              return GestureDetector(
+                onTap: () => onSelected(mins),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isActive ? tokens.accentSoft : Colors.transparent,
+                    border: Border.all(
+                      color: isActive ? tokens.accent : tokens.border,
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.zero,
+                  ),
+                  child: Text(
+                    _formatDurationLabel(mins),
+                    style: TextStyle(
+                      color: isActive ? tokens.accent : tokens.text,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+
+          // Custom duration input row
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: tokens.border, width: 1.5),
+                    borderRadius: BorderRadius.zero,
+                  ),
+                  child: TextField(
+                    controller: customController,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(
+                      color: tokens.text,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Custom mins',
+                      hintStyle: TextStyle(color: tokens.textSubtle, fontSize: 12),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  final parsed = int.tryParse(customController.text.trim());
+                  if (parsed != null && parsed > 0) {
+                    onSelected(parsed);
+                    customController.clear();
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: tokens.accent,
+                    border: Border.all(color: tokens.border, width: 1.5),
+                    borderRadius: BorderRadius.zero,
+                  ),
+                  child: Text(
+                    'SET',
+                    style: TextStyle(
+                      color: tokens.surface,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -28,6 +28,7 @@ class Package {
   final DateTime updatedAt;
   final DateTime? deliveredAt;
   final int attemptCount; // computed field (from attempts table joining or subquery)
+  final String? photoPath;
 
   Package({
     required this.id,
@@ -53,6 +54,7 @@ class Package {
     required this.updatedAt,
     this.deliveredAt,
     this.attemptCount = 0,
+    this.photoPath,
   });
 
   double get totalCod => codCash + codDigital;
@@ -83,6 +85,7 @@ class Package {
       updatedAt: DateTime.parse(map['updated_at'] as String),
       deliveredAt: map['delivered_at'] != null ? DateTime.parse(map['delivered_at'] as String) : null,
       attemptCount: attempts,
+      photoPath: map['photo_path'] as String?,
     );
   }
 
@@ -110,6 +113,7 @@ class Package {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'delivered_at': deliveredAt?.toIso8601String(),
+      'photo_path': photoPath,
     };
   }
 
@@ -137,6 +141,7 @@ class Package {
     DateTime? updatedAt,
     DateTime? deliveredAt,
     int? attemptCount,
+    String? photoPath,
   }) {
     return Package(
       id: id ?? this.id,
@@ -162,6 +167,7 @@ class Package {
       updatedAt: updatedAt ?? this.updatedAt,
       deliveredAt: deliveredAt ?? this.deliveredAt,
       attemptCount: attemptCount ?? this.attemptCount,
+      photoPath: photoPath ?? this.photoPath,
     );
   }
 }
@@ -242,9 +248,16 @@ class DbHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -271,7 +284,8 @@ class DbHelper {
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        delivered_at TEXT
+        delivered_at TEXT,
+        photo_path TEXT
       )
     ''');
 
@@ -458,6 +472,22 @@ class DbHelper {
       'SELECT DISTINCT barangay FROM packages WHERE barangay IS NOT NULL AND barangay != "" ORDER BY barangay ASC'
     );
     return result.map((r) => r['barangay'] as String).toList();
+  }
+
+  Future<List<String>> getUniqueStreets() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT street FROM packages WHERE street IS NOT NULL AND street != "" ORDER BY street ASC'
+    );
+    return result.map((r) => r['street'] as String).toList();
+  }
+
+  Future<List<String>> getUniqueZones() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT zone FROM packages WHERE zone IS NOT NULL AND zone != "" ORDER BY zone ASC'
+    );
+    return result.map((r) => r['zone'] as String).toList();
   }
 
   Future<List<String>> getUniqueCities() async {

@@ -1,7 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geocoding/geocoding.dart' as geo;
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/database/db_helper.dart';
 import '../../core/theme/app_theme.dart';
@@ -47,6 +51,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
   String _paymentType = 'cod_cash';
   double? _lat;
   double? _lng;
+  String? _photoPath;
 
   @override
   void initState() {
@@ -61,7 +66,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     _streetController = TextEditingController(text: p?.street ?? '');
     _zoneController = TextEditingController(text: p?.zone ?? '');
     _barangayController = TextEditingController(text: p?.barangay ?? '');
-    _cityController = TextEditingController(text: p?.city ?? 'Cagayan de Oro'); // Default PH City
+    _cityController = TextEditingController(text: p?.city ?? 'Claveria'); // Default PH City
 
     _codCashController = TextEditingController(text: p?.codCash.toString() ?? '0');
     _codDigitalController = TextEditingController(text: p?.codDigital.toString() ?? '0');
@@ -72,6 +77,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     _paymentType = p?.paymentType ?? 'cod_cash';
     _lat = p?.lat;
     _lng = p?.lng;
+    _photoPath = p?.photoPath;
   }
 
   @override
@@ -95,7 +101,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
   Future<void> _pickLocationOnMap() async {
     final initialPos = _lat != null && _lng != null
         ? LatLng(_lat!, _lng!)
-        : const LatLng(8.4542, 124.6319); // Default CDO coords
+        : const LatLng(8.6074, 124.8957); // Default Claveria coords
 
     final LatLng? pickedLocation = await showModalBottomSheet<LatLng>(
       context: context,
@@ -111,6 +117,69 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         _lat = pickedLocation.latitude;
         _lng = pickedLocation.longitude;
       });
+
+      try {
+        final placemarks = await geo.placemarkFromCoordinates(
+          pickedLocation.latitude,
+          pickedLocation.longitude,
+        );
+        if (placemarks.isNotEmpty && mounted) {
+          final place = placemarks.first;
+          final finalBarangay = place.subLocality ?? '';
+          final finalCity = place.locality ?? '';
+          String finalStreet = place.street ?? '';
+          if (finalStreet == finalBarangay || finalStreet == finalCity) {
+            finalStreet = place.thoroughfare ?? '';
+          }
+
+          bool autoFilled = false;
+          if (_streetController.text.trim().isEmpty && finalStreet.isNotEmpty) {
+            _streetController.text = finalStreet;
+            autoFilled = true;
+          }
+          if (_barangayController.text.trim().isEmpty && finalBarangay.isNotEmpty) {
+            _barangayController.text = finalBarangay;
+            autoFilled = true;
+          }
+          if ((_cityController.text.trim().isEmpty || _cityController.text.trim() == 'Claveria') && finalCity.isNotEmpty) {
+            _cityController.text = finalCity;
+            autoFilled = true;
+          }
+
+          if (autoFilled && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Address details auto-filled from pinned location.'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Geocoding error: $e');
+      }
+    }
+  }
+
+  Future<void> _takePhoto() async {
+    final ImagePicker picker = ImagePicker();
+    try {
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+      );
+      if (image != null) {
+        final appDir = await getApplicationDocumentsDirectory();
+        final trackingNum = _trackingController.text.trim();
+        final filename = 'parcel_${trackingNum.isEmpty ? const Uuid().v4() : trackingNum}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final savedFile = await File(image.path).copy('${appDir.path}/$filename');
+        
+        setState(() {
+          _photoPath = savedFile.path;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error taking photo: $e');
     }
   }
 
@@ -167,6 +236,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         sortOrder: 0, // Auto computed in DB helper
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        photoPath: _photoPath,
       );
       notifier.addPackage(newPkg);
     } else {
@@ -189,6 +259,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         extraAmount: extraAmount,
         extraLabel: extraLabel.isEmpty ? null : extraLabel,
         updatedAt: DateTime.now(),
+        photoPath: _photoPath,
       );
       notifier.updatePackage(updatedPkg);
     }
@@ -266,63 +337,447 @@ class _PackageFormState extends ConsumerState<PackageForm> {
             ),
             const SizedBox(height: 24),
 
+            // Parcel Photo Section
+            Text(
+              'PARCEL PHOTO',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: tokens.surfaceAlt,
+                border: Border.all(color: tokens.border, width: 1.5),
+                borderRadius: BorderRadius.zero,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: tokens.border, width: 1.5),
+                      color: tokens.surface,
+                    ),
+                    child: _photoPath != null && File(_photoPath!).existsSync()
+                        ? Image.file(
+                            File(_photoPath!),
+                            fit: BoxFit.cover,
+                          )
+                        : Icon(Icons.camera_alt_outlined, color: tokens.textSubtle),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _photoPath != null ? 'Parcel Photo Captured' : 'No Photo Captured',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _photoPath != null ? 'Saved locally' : 'Take a photo of the parcel',
+                          style: TextStyle(fontSize: 11, color: tokens.textSubtle),
+                        ),
+                      ],
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _takePhoto,
+                    icon: Icon(_photoPath != null ? Icons.cached_rounded : Icons.camera_alt_rounded, size: 16),
+                    label: Text(_photoPath != null ? 'RETAKE' : 'TAKE PHOTO', style: const TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // Location Section
             Text(
               'DELIVERY LOCATION',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
             ),
             const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-              child: TextFormField(
-                controller: _streetController,
-                decoration: const InputDecoration(
-                  labelText: 'Street Address',
-                  hintText: 'e.g. House 12, St. Jude Street',
-                ),
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                return Autocomplete<String>(
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return const Iterable<String>.empty();
+                    }
+                    final suggestions = ref.read(packagesNotifierProvider).uniqueStreets;
+                    return suggestions.where((option) =>
+                        option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                  },
+                  onSelected: (String selection) {
+                    _streetController.text = selection;
+                  },
+                  optionsViewBuilder: (context, onSelected, options) {
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 0,
+                        color: Colors.transparent,
+                        child: Container(
+                          width: constraints.maxWidth,
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          margin: const EdgeInsets.only(top: 4),
+                          decoration: BoxDecoration(
+                            color: tokens.surface,
+                            border: Border.all(color: tokens.border, width: 2.0),
+                            boxShadow: [
+                              BoxShadow(
+                                color: tokens.shadowColor,
+                                offset: const Offset(3, 3),
+                                blurRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: ListView.builder(
+                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
+                            itemCount: options.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final String option = options.elementAt(index);
+                              return InkWell(
+                                onTap: () => onSelected(option),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(
+                                        color: index == options.length - 1 ? Colors.transparent : tokens.border,
+                                        width: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    option,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: tokens.text,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  fieldViewBuilder: (context, fieldController, focusNode, onFieldSubmitted) {
+                    if (fieldController.text != _streetController.text) {
+                      fieldController.text = _streetController.text;
+                    }
+                    return Container(
+                      decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
+                      child: TextFormField(
+                        controller: fieldController,
+                        focusNode: focusNode,
+                        onFieldSubmitted: (_) => onFieldSubmitted(),
+                        onChanged: (val) {
+                          _streetController.text = val;
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Street Address',
+                          hintText: 'e.g. House 12, St. Jude Street',
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
             const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-              child: TextFormField(
-                controller: _zoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Zone / Purok',
-                  hintText: 'e.g. Zone 4',
-                ),
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                return Autocomplete<String>(
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return const Iterable<String>.empty();
+                    }
+                    final suggestions = ref.read(packagesNotifierProvider).uniqueZones;
+                    return suggestions.where((option) =>
+                        option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                  },
+                  onSelected: (String selection) {
+                    _zoneController.text = selection;
+                  },
+                  optionsViewBuilder: (context, onSelected, options) {
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 0,
+                        color: Colors.transparent,
+                        child: Container(
+                          width: constraints.maxWidth,
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          margin: const EdgeInsets.only(top: 4),
+                          decoration: BoxDecoration(
+                            color: tokens.surface,
+                            border: Border.all(color: tokens.border, width: 2.0),
+                            boxShadow: [
+                              BoxShadow(
+                                color: tokens.shadowColor,
+                                offset: const Offset(3, 3),
+                                blurRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: ListView.builder(
+                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
+                            itemCount: options.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final String option = options.elementAt(index);
+                              return InkWell(
+                                onTap: () => onSelected(option),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(
+                                        color: index == options.length - 1 ? Colors.transparent : tokens.border,
+                                        width: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    option,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: tokens.text,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  fieldViewBuilder: (context, fieldController, focusNode, onFieldSubmitted) {
+                    if (fieldController.text != _zoneController.text) {
+                      fieldController.text = _zoneController.text;
+                    }
+                    return Container(
+                      decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
+                      child: TextFormField(
+                        controller: fieldController,
+                        focusNode: focusNode,
+                        onFieldSubmitted: (_) => onFieldSubmitted(),
+                        onChanged: (val) {
+                          _zoneController.text = val;
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Zone / Purok',
+                          hintText: 'e.g. Zone 4',
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-                    child: TextFormField(
-                      controller: _barangayController,
-                      decoration: const InputDecoration(
-                        labelText: 'Barangay',
-                        hintText: 'e.g. Kauswagan',
-                      ),
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Autocomplete<String>(
+                        optionsBuilder: (TextEditingValue textEditingValue) {
+                          if (textEditingValue.text.isEmpty) {
+                            return const Iterable<String>.empty();
+                          }
+                          final suggestions = ref.read(packagesNotifierProvider).uniqueBarangays;
+                          return suggestions.where((option) =>
+                              option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                        },
+                        onSelected: (String selection) {
+                          _barangayController.text = selection;
+                        },
+                        optionsViewBuilder: (context, onSelected, options) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 0,
+                              color: Colors.transparent,
+                              child: Container(
+                                width: constraints.maxWidth,
+                                constraints: const BoxConstraints(maxHeight: 200),
+                                margin: const EdgeInsets.only(top: 4),
+                                decoration: BoxDecoration(
+                                  color: tokens.surface,
+                                  border: Border.all(color: tokens.border, width: 2.0),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: tokens.shadowColor,
+                                      offset: const Offset(3, 3),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: options.length,
+                                  itemBuilder: (BuildContext context, int index) {
+                                    final String option = options.elementAt(index);
+                                    return InkWell(
+                                      onTap: () => onSelected(option),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            bottom: BorderSide(
+                                              color: index == options.length - 1 ? Colors.transparent : tokens.border,
+                                              width: 1.0,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          option,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: tokens.text,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        fieldViewBuilder: (context, fieldController, focusNode, onFieldSubmitted) {
+                          if (fieldController.text != _barangayController.text) {
+                            fieldController.text = _barangayController.text;
+                          }
+                          return Container(
+                            decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
+                            child: TextFormField(
+                              controller: fieldController,
+                              focusNode: focusNode,
+                              onFieldSubmitted: (_) => onFieldSubmitted(),
+                              onChanged: (val) {
+                                _barangayController.text = val;
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Barangay',
+                                hintText: 'e.g. Kauswagan',
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-                    child: TextFormField(
-                      controller: _cityController,
-                      decoration: const InputDecoration(
-                        labelText: 'City *',
-                        hintText: 'e.g. Cagayan de Oro',
-                      ),
-                      validator: (val) {
-                        if (val == null || val.trim().isEmpty) return 'City is required';
-                        return null;
-                      },
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Autocomplete<String>(
+                        optionsBuilder: (TextEditingValue textEditingValue) {
+                          if (textEditingValue.text.isEmpty) {
+                            return const Iterable<String>.empty();
+                          }
+                          final suggestions = ref.read(packagesNotifierProvider).uniqueCities;
+                          return suggestions.where((option) =>
+                              option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                        },
+                        onSelected: (String selection) {
+                          _cityController.text = selection;
+                        },
+                        optionsViewBuilder: (context, onSelected, options) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 0,
+                              color: Colors.transparent,
+                              child: Container(
+                                width: constraints.maxWidth,
+                                constraints: const BoxConstraints(maxHeight: 200),
+                                margin: const EdgeInsets.only(top: 4),
+                                decoration: BoxDecoration(
+                                  color: tokens.surface,
+                                  border: Border.all(color: tokens.border, width: 2.0),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: tokens.shadowColor,
+                                      offset: const Offset(3, 3),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: options.length,
+                                  itemBuilder: (BuildContext context, int index) {
+                                    final String option = options.elementAt(index);
+                                    return InkWell(
+                                      onTap: () => onSelected(option),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            bottom: BorderSide(
+                                              color: index == options.length - 1 ? Colors.transparent : tokens.border,
+                                              width: 1.0,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          option,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: tokens.text,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        fieldViewBuilder: (context, fieldController, focusNode, onFieldSubmitted) {
+                          if (fieldController.text != _cityController.text) {
+                            fieldController.text = _cityController.text;
+                          }
+                          return Container(
+                            decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
+                            child: TextFormField(
+                              controller: fieldController,
+                              focusNode: focusNode,
+                              onFieldSubmitted: (_) => onFieldSubmitted(),
+                              onChanged: (val) {
+                                _cityController.text = val;
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'City *',
+                                hintText: 'e.g. Claveria',
+                              ),
+                              validator: (val) {
+                                if (val == null || val.trim().isEmpty) return 'City is required';
+                                return null;
+                              },
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
               ],

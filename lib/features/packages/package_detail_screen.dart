@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -70,11 +71,15 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
   }
 
   void _onSaved() {
+    ref.read(packagesNotifierProvider.notifier).refresh();
+    if (widget.packageId == 'new') {
+      context.pop();
+      return;
+    }
     setState(() {
       _isEditing = false;
     });
     _loadPackageDetails();
-    ref.read(packagesNotifierProvider.notifier).refresh();
   }
 
   Future<void> _logAttempt() async {
@@ -192,7 +197,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
     
     final initialPos = _package!.lat != null && _package!.lng != null
         ? LatLng(_package!.lat!, _package!.lng!)
-        : const LatLng(8.4542, 124.6319); // Default CDO coords
+        : const LatLng(8.6074, 124.8957); // Default Claveria coords
 
     final LatLng? pickedLocation = await showModalBottomSheet<LatLng>(
       context: context,
@@ -469,6 +474,60 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Parcel Photo Section
+                if (p.photoPath != null && File(p.photoPath!).existsSync()) ...[
+                  Text(
+                    'PARCEL PHOTO',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  OffsetShadowCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => Dialog(
+                                backgroundColor: Colors.transparent,
+                                insetPadding: const EdgeInsets.all(12),
+                                child: Stack(
+                                  alignment: Alignment.topRight,
+                                  children: [
+                                    InteractiveViewer(
+                                      child: Image.file(
+                                        File(p.photoPath!),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close_rounded, color: Colors.white, size: 30),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.zero,
+                            child: SizedBox(
+                              height: 200,
+                              child: Image.file(
+                                File(p.photoPath!),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // Financial details
                 Text(

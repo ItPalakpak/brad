@@ -97,17 +97,6 @@ class ThemePicker extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      BrandLogo(type: BrandLogoType.wordmark, height: 22),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Wordmark',
-                        style: TextStyle(fontSize: 10, color: tokens.textSubtle, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ],

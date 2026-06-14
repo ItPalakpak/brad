@@ -60,7 +60,7 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
     try {
       // Get current location
       final pos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
-      final center = pos != null ? LatLng(pos.latitude, pos.longitude) : const LatLng(8.4542, 124.6319); // default CDO
+      final center = pos != null ? LatLng(pos.latitude, pos.longitude) : const LatLng(8.6074, 124.8957); // default Claveria
 
       final cacheService = ref.read(mapCacheServiceProvider);
       

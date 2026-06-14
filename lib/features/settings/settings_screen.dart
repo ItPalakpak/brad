@@ -13,7 +13,7 @@ import '../packages/packages_provider.dart';
 import 'theme_picker.dart';
 import 'offline_map_settings.dart';
 import '../timer/timer_overlay.dart';
-import '../timer/timer_notifier.dart';
+
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -24,9 +24,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _nameController;
-  late TextEditingController _timerController;
   double _proximityRadius = 500.0;
-  int _timerDuration = 30;
   bool _isShiftActive = true;
 
   @override
@@ -35,15 +33,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final prefs = ref.read(sharedPreferencesProvider);
     _nameController = TextEditingController(text: prefs.getString('rider_name') ?? 'Rider');
     _proximityRadius = prefs.getDouble('proximity_radius') ?? 500.0;
-    _timerDuration = prefs.getInt('timer_duration_minutes') ?? 30;
-    _timerController = TextEditingController(text: _timerDuration.toString());
     _isShiftActive = prefs.getBool('is_shift_active') ?? true;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _timerController.dispose();
     super.dispose();
   }
 
@@ -62,14 +57,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(geofenceManagerProvider).setAlertRadius(val);
   }
 
-  Future<void> _updateTimerDuration(int val) async {
-    final prefs = ref.read(sharedPreferencesProvider);
-    await prefs.setInt('timer_duration_minutes', val);
-    setState(() {
-      _timerDuration = val;
-    });
-    ref.read(timerNotifierProvider.notifier).setDuration(val);
-  }
 
 
   Future<void> _toggleShift(bool active) async {
@@ -260,7 +247,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const OfflineMapSettingsSection(),
                 const SizedBox(height: 16),
 
-                // Timer defaults settings
+                // Timer widget launcher
                 OffsetShadowCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -270,60 +257,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Default Shift Timer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          Container(
-                            width: 120,
-                            decoration: BoxDecoration(
-                              color: tokens.inputBg,
-                              borderRadius: BorderRadius.zero,
-                              border: Border.all(color: tokens.inputBorder, width: 1.5),
-                              boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
-                            ),
-                            child: TextFormField(
-                              controller: _timerController,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: tokens.text,
-                                fontFamily: 'JetBrains Mono',
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                suffixText: ' min',
-                                suffixStyle: TextStyle(fontWeight: FontWeight.normal, fontSize: 12),
-                              ),
-                              onChanged: (val) {
-                                final parsed = int.tryParse(val);
-                                if (parsed != null && parsed > 0) {
-                                  _updateTimerDuration(parsed);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
                           const Text('Full-Screen Shift Timers', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           ElevatedButton(
                             onPressed: () {
-                              // Toggle displaying full-screen timers
-                              final isShown = TimerOverlayManager.instance.isShown;
-                              if (isShown) {
-                                TimerOverlayManager.instance.hide();
-                              } else {
-                                TimerOverlayManager.instance.show(context, ref);
-                              }
-                              setState(() {});
+                              TimerOverlayManager.instance.show(context, ref);
                             },
-                            child: Text(TimerOverlayManager.instance.isShown ? 'CLOSE TIMERS' : 'OPEN TIMERS'),
+                            child: const Text('OPEN TIMERS'),
                           ),
                         ],
                       ),
