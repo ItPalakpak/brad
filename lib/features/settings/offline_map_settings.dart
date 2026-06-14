@@ -8,6 +8,7 @@ import '../../core/services/map_cache_service.dart';
 import '../../core/services/connectivity_service.dart';
 import '../../core/services/location_service.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/section_header.dart';
 
 class OfflineMapSettingsSection extends ConsumerStatefulWidget {
@@ -132,10 +133,11 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
                     child: const Text('CANCEL'),
                   ),
                   const SizedBox(width: 8),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: AppStatusColors.error),
+                  OffsetShadowButton.elevated(
+                    backgroundColor: AppStatusColors.error,
+                    foregroundColor: Colors.white,
                     onPressed: () => Navigator.pop(context, true),
-                    child: const Text('CLEAR', style: TextStyle(color: Colors.white)),
+                    child: const Text('CLEAR'),
                   ),
                 ],
               ),
@@ -187,17 +189,20 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
               // Gated download button
               Tooltip(
                 message: isOnline ? '' : 'Connect to mobile data to download tiles.',
-                child: ElevatedButton.icon(
+                child: OffsetShadowButton.icon(
                   onPressed: isOnline ? _downloadCurrentArea : null,
                   icon: const Icon(Icons.download_rounded),
                   label: const Text('DOWNLOAD TILES (5KM AREA)'),
                 ),
               ),
               const SizedBox(height: 8),
-              OutlinedButton.icon(
+              OffsetShadowButton.icon(
+                variant: OffsetButtonVariant.outlined,
                 onPressed: _tileCount > 0 ? _clearCache : null,
-                icon: const Icon(Icons.delete_outline_rounded, color: AppStatusColors.error),
-                label: const Text('CLEAR TILE CACHE', style: TextStyle(color: AppStatusColors.error)),
+                foregroundColor: AppStatusColors.error,
+                borderColor: tokens.border,
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('CLEAR TILE CACHE'),
               ),
             ]
           ],

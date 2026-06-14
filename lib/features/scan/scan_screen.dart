@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/brand_logo.dart';
 import 'scan_provider.dart';
 
@@ -184,7 +185,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              OutlinedButton(
+              OffsetShadowButton.outlined(
                 onPressed: () {
                   Navigator.pop(context);
                   _controller.start();

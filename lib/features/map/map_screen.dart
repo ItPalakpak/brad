@@ -13,6 +13,7 @@ import '../../core/services/map_cache_service.dart';
 import '../../core/services/location_service.dart';
 import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../../shared/widgets/payment_chip.dart';
 import '../../shared/widgets/brand_logo.dart';
@@ -155,7 +156,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
+                    child: OffsetShadowButton.outlined(
                       onPressed: () => Navigator.pop(context),
                       child: const Text('CLOSE'),
                     ),
@@ -281,7 +282,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         child: const Text('CANCEL'),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton(
+                      OffsetShadowButton.elevated(
                         onPressed: () async {
                           if (!formKey.currentState!.validate()) return;
                           Navigator.pop(context);
@@ -686,8 +687,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       child: FloatingActionButton(
                         heroTag: 'map-gps-fab',
                         onPressed: _isLocating ? null : _centerOnMe,
-                        backgroundColor: tokens.surface,
-                        foregroundColor: tokens.accent,
                         child: _isLocating
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
                             : const Icon(Icons.my_location_rounded),

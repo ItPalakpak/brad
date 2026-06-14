@@ -7,6 +7,7 @@ import '../../core/theme/theme_notifier.dart';
 import '../../core/services/geofence_manager.dart';
 import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../packages/packages_provider.dart';
@@ -187,10 +188,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isShiftActive ? AppStatusColors.error : AppStatusColors.success,
-                        ),
+                      OffsetShadowButton.elevated(
+                        backgroundColor: _isShiftActive ? AppStatusColors.error : AppStatusColors.success,
+                        foregroundColor: Colors.white,
+                        fullWidth: true,
                         onPressed: () => _toggleShift(!_isShiftActive),
                         child: Text(_isShiftActive ? 'END SHIFT' : 'START SHIFT'),
                       ),
@@ -258,7 +259,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Full-Screen Shift Timers', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ElevatedButton(
+                          OffsetShadowButton.elevated(
                             onPressed: () {
                               TimerOverlayManager.instance.show(context, ref);
                             },
@@ -278,7 +279,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     children: [
                       const SectionHeader(title: 'DATA MANAGEMENT', icon: Icons.backup_outlined),
                       const SizedBox(height: 16),
-                      ElevatedButton.icon(
+                      OffsetShadowButton.icon(
+                        fullWidth: true,
                         onPressed: () async {
                           try {
                             await ref.read(packagesNotifierProvider.notifier).shareXlsx();
@@ -294,7 +296,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         label: const Text('EXPORT SHIFT DATA (XLSX)'),
                       ),
                       const SizedBox(height: 12),
-                      OutlinedButton.icon(
+                      OffsetShadowButton.icon(
+                        variant: OffsetButtonVariant.outlined,
+                        fullWidth: true,
+                        foregroundColor: AppStatusColors.error,
+                        borderColor: tokens.border,
                         onPressed: () async {
                           final confirmed = await showDialog<bool>(
                             context: context,
@@ -326,10 +332,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           child: const Text('CANCEL'),
                                         ),
                                         const SizedBox(width: 8),
-                                        ElevatedButton(
-                                          style: ElevatedButton.styleFrom(backgroundColor: AppStatusColors.error),
+                                        OffsetShadowButton.elevated(
+                                          backgroundColor: AppStatusColors.error,
+                                          foregroundColor: Colors.white,
                                           onPressed: () => Navigator.pop(context, true),
-                                          child: const Text('CLEAR DELIVERED', style: TextStyle(color: Colors.white)),
+                                          child: const Text('CLEAR DELIVERED'),
                                         ),
                                       ],
                                     ),
@@ -348,8 +355,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             }
                           }
                         },
-                        icon: const Icon(Icons.delete_sweep_outlined, color: AppStatusColors.error),
-                        label: const Text('CLEAR DELIVERED PACKAGES', style: TextStyle(color: AppStatusColors.error)),
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        label: const Text('CLEAR DELIVERED PACKAGES'),
                       ),
                     ],
                   ),

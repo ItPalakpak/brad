@@ -11,6 +11,7 @@ import '../../core/database/db_helper.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../map/pin_picker_sheet.dart';
 import 'packages_provider.dart';
 
@@ -383,10 +384,11 @@ class _PackageFormState extends ConsumerState<PackageForm> {
                       ],
                     ),
                   ),
-                  OutlinedButton.icon(
+                  OffsetShadowButton.icon(
+                    variant: OffsetButtonVariant.outlined,
                     onPressed: _takePhoto,
-                    icon: Icon(_photoPath != null ? Icons.cached_rounded : Icons.camera_alt_rounded, size: 16),
-                    label: Text(_photoPath != null ? 'RETAKE' : 'TAKE PHOTO', style: const TextStyle(fontSize: 11)),
+                    icon: Icon(_photoPath != null ? Icons.cached_rounded : Icons.camera_alt_rounded),
+                    label: Text(_photoPath != null ? 'RETAKE' : 'TAKE PHOTO'),
                   ),
                 ],
               ),
@@ -815,10 +817,11 @@ class _PackageFormState extends ConsumerState<PackageForm> {
                       ],
                     ),
                   ),
-                  OutlinedButton.icon(
+                  OffsetShadowButton.icon(
+                    variant: OffsetButtonVariant.outlined,
                     onPressed: _pickLocationOnMap,
-                    icon: Icon(_lat != null && _lng != null ? Icons.edit_location_alt_rounded : Icons.pin_drop_rounded, size: 16),
-                    label: Text(_lat != null && _lng != null ? 'CHANGE PIN' : 'PIN ON MAP', style: const TextStyle(fontSize: 11)),
+                    icon: Icon(_lat != null && _lng != null ? Icons.edit_location_alt_rounded : Icons.pin_drop_rounded),
+                    label: Text(_lat != null && _lng != null ? 'CHANGE PIN' : 'PIN ON MAP'),
                   ),
                 ],
               ),

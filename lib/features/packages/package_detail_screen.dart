@@ -11,6 +11,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/services/map_cache_service.dart';
 import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../../shared/widgets/payment_chip.dart';
 import '../../shared/utils/currency_formatter.dart';
@@ -166,7 +167,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                           child: const Text('CANCEL'),
                         ),
                         const SizedBox(width: 8),
-                        ElevatedButton(
+                        OffsetShadowButton.elevated(
                           onPressed: () async {
                             Navigator.pop(context);
                             if (_package != null) {
@@ -444,8 +445,6 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                                       child: FloatingActionButton.small(
                                         heroTag: 'map-thumbnail-fab',
                                         onPressed: _pickLocationOnMap,
-                                        backgroundColor: tokens.surface,
-                                        foregroundColor: tokens.accent,
                                         child: const Icon(Icons.edit_location_alt_rounded),
                                       ),
                                     ),
@@ -461,10 +460,11 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                                     const SizedBox(height: 8),
                                     const Text('No location coordinates pinned', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                     const SizedBox(height: 8),
-                                    OutlinedButton.icon(
+                                    OffsetShadowButton.icon(
+                                      variant: OffsetButtonVariant.outlined,
                                       onPressed: _pickLocationOnMap,
-                                      icon: const Icon(Icons.pin_drop_rounded, size: 16),
-                                      label: const Text('PIN ON MAP', style: TextStyle(fontSize: 11)),
+                                      icon: const Icon(Icons.pin_drop_rounded),
+                                      label: const Text('PIN ON MAP'),
                                     ),
                                   ],
                                 ),
@@ -747,8 +747,9 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
               onPressed: () => Navigator.pop(context),
               child: const Text('CANCEL'),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppStatusColors.error),
+            OffsetShadowButton.elevated(
+              backgroundColor: AppStatusColors.error,
+              foregroundColor: Colors.white,
               onPressed: () async {
                 Navigator.pop(context);
                 if (_package != null) {
@@ -758,7 +759,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   }
                 }
               },
-              child: const Text('DELETE', style: TextStyle(color: Colors.white)),
+              child: const Text('DELETE'),
             ),
           ],
         );

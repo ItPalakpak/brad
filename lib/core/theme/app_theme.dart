@@ -99,9 +99,9 @@ class AppTheme {
         elevation: 0,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: tokens.accent,
-        foregroundColor: tokens.textInvert,
-        shape: Border.all(color: tokens.shadowColor, width: 1.5),
+        backgroundColor: tokens.surface,
+        foregroundColor: tokens.text,
+        shape: Border.all(color: tokens.border, width: 1.5),
         elevation: 0,
       ),
       inputDecorationTheme: InputDecorationTheme(

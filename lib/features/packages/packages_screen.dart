@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../../shared/utils/currency_formatter.dart';
 import '../../core/database/db_helper.dart';
@@ -432,7 +433,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           child: const Text('RESET'),
                         ),
                         const SizedBox(width: 8),
-                        ElevatedButton(
+                        OffsetShadowButton.elevated(
                           onPressed: () {
                             Navigator.pop(context);
                           },
@@ -529,7 +530,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           child: const Text('RESET'),
                         ),
                         const SizedBox(width: 8),
-                        ElevatedButton(
+                        OffsetShadowButton.elevated(
                           onPressed: () {
                             Navigator.pop(context);
                           },
@@ -629,7 +630,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           child: const Text('RESET'),
                         ),
                         const SizedBox(width: 8),
-                        ElevatedButton(
+                        OffsetShadowButton.elevated(
                           onPressed: () {
                             Navigator.pop(context);
                           },
