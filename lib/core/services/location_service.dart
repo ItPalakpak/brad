@@ -47,8 +47,12 @@ class LocationService extends _$LocationService {
 }
 
 @riverpod
-Stream<Position> locationStream(Ref ref) {
-  return Geolocator.getPositionStream(
+Stream<Position> locationStream(Ref ref) async* {
+  final hasPerm = await ref.read(locationServiceProvider.notifier).handlePermission();
+  if (!hasPerm) {
+    throw Exception('Location permission not granted');
+  }
+  yield* Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5, // update every 5 meters

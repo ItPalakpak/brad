@@ -16,11 +16,13 @@ import 'delivery_confirmation_modal.dart';
 class PackageCard extends ConsumerWidget {
   final Package package;
   final bool showDragHandle;
+  final int? index;
 
   const PackageCard({
     super.key,
     required this.package,
     this.showDragHandle = false,
+    this.index,
   });
 
   @override
@@ -119,7 +121,13 @@ class PackageCard extends ConsumerWidget {
                     Row(
                       children: [
                         if (showDragHandle) ...[
-                          Icon(Icons.drag_handle_rounded, color: tokens.textSubtle),
+                          if (index != null)
+                            ReorderableDragStartListener(
+                              index: index!,
+                              child: Icon(Icons.drag_handle_rounded, color: tokens.textSubtle),
+                            )
+                          else
+                            Icon(Icons.drag_handle_rounded, color: tokens.textSubtle),
                           const SizedBox(width: 8),
                         ],
                         const Icon(Icons.inventory_2_outlined, size: 16),

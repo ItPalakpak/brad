@@ -324,7 +324,7 @@ class DbHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -332,26 +332,77 @@ class DbHelper {
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
+      } catch (_) {}
     }
     if (oldVersion < 3) {
-      await db.execute('ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT');
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT');
+      } catch (_) {}
     }
     if (oldVersion < 4) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS rides (
-          id TEXT PRIMARY KEY,
-          ride_number INTEGER NOT NULL,
-          date TEXT NOT NULL,
-          started_at TEXT NOT NULL,
-          ended_at TEXT
-        )
-      ''');
-      await db.execute('ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)');
-      await db.execute('ALTER TABLE packages ADD COLUMN rescheduled_date TEXT');
-      await db.execute('ALTER TABLE packages ADD COLUMN rejection_reason TEXT');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS rides (
+            id TEXT PRIMARY KEY,
+            ride_number INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN rescheduled_date TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN rejection_reason TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
+      } catch (_) {}
+    }
+    if (oldVersion < 5) {
+      // Self-healing migration for version 5: ensures everything is properly declared
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS rides (
+            id TEXT PRIMARY KEY,
+            ride_number INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN rescheduled_date TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE packages ADD COLUMN rejection_reason TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
+      } catch (_) {}
     }
   }
 
@@ -794,6 +845,7 @@ class DbHelper {
     final result = await db.query(
       'packages',
       where: 'ride_id = ?',
+      whereArgs: [rideId],
       orderBy: 'sort_order ASC',
     );
     return result.map((map) => Package.fromMap(map)).toList();

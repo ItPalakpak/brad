@@ -275,7 +275,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
       if (ridePkgs.isEmpty) {
         children.add(_buildNoPackagesInGroup(tokens, 'No packages added to this ride yet. Scan packages or add them to assign.'));
       } else {
-        children.add(_buildPackagesListView(ridePkgs));
+        children.add(_buildPackagesListView(
+          ridePkgs,
+          isReorderable: true,
+          notifier: notifier,
+        ));
       }
       children.add(const SizedBox(height: 16));
     }
@@ -294,7 +298,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
       if (ridePkgs.isEmpty) {
         children.add(_buildNoPackagesInGroup(tokens, 'No packages were handled in this ride.'));
       } else {
-        children.add(_buildPackagesListView(ridePkgs));
+        children.add(_buildPackagesListView(
+          ridePkgs,
+          isReorderable: false,
+          notifier: notifier,
+        ));
       }
       children.add(const SizedBox(height: 16));
     }
@@ -310,7 +318,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
       if (unassignedPkgs.isEmpty) {
         children.add(_buildNoPackagesInGroup(tokens, 'All packages have been assigned to rides.'));
       } else {
-        children.add(_buildPackagesListView(unassignedPkgs));
+        children.add(_buildPackagesListView(
+          unassignedPkgs,
+          isReorderable: false,
+          notifier: notifier,
+        ));
       }
       children.add(const SizedBox(height: 16));
     }
@@ -522,7 +534,32 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     );
   }
 
-  Widget _buildPackagesListView(List<Package> packages) {
+  Widget _buildPackagesListView(
+    List<Package> packages, {
+    required bool isReorderable,
+    required PackagesNotifier notifier,
+  }) {
+    if (isReorderable) {
+      return ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: packages.length,
+        buildDefaultDragHandles: false,
+        onReorder: (oldIndex, newIndex) {
+          notifier.reorderPackages(packages, oldIndex, newIndex);
+        },
+        itemBuilder: (context, index) {
+          final pkg = packages[index];
+          return PackageCard(
+            key: ValueKey(pkg.id),
+            package: pkg,
+            showDragHandle: true,
+            index: index,
+          );
+        },
+      );
+    }
+
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),

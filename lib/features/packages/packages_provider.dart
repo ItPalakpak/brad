@@ -61,7 +61,7 @@ class PackagesState {
     List<String>? uniquePaymentTypes,
     List<String>? uniqueStreets,
     List<String>? uniqueZones,
-    Ride? activeRide,
+    Object? activeRide = const Object(),
     List<Ride>? todayRides,
   }) {
     return PackagesState(
@@ -78,7 +78,7 @@ class PackagesState {
       uniquePaymentTypes: uniquePaymentTypes ?? this.uniquePaymentTypes,
       uniqueStreets: uniqueStreets ?? this.uniqueStreets,
       uniqueZones: uniqueZones ?? this.uniqueZones,
-      activeRide: activeRide ?? this.activeRide,
+      activeRide: activeRide == const Object() ? this.activeRide : (activeRide as Ride?),
       todayRides: todayRides ?? this.todayRides,
     );
   }
@@ -149,7 +149,9 @@ class PackagesNotifier extends _$PackagesNotifier {
         todayRides: todayRides,
         isLoading: false,
       );
-    } catch (_) {
+    } catch (e, stack) {
+      debugPrint('=== REFRESH ERROR: $e');
+      debugPrint('$stack');
       state = state.copyWith(isLoading: false);
     }
   }
@@ -408,31 +410,14 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
-  Future<void> reorder(int oldIndex, int newIndex) async {
-    final list = [...state.packages];
+  Future<void> reorderPackages(List<Package> packagesList, int oldIndex, int newIndex) async {
     if (newIndex > oldIndex) newIndex--;
+    final list = [...packagesList];
     final item = list.removeAt(oldIndex);
     list.insert(newIndex, item);
 
-    // Optimistic UI update
-    state = state.copyWith(packages: list);
-
-    // SQLite Persistence - Map the relative reordered list back to the full list
-    final allPackages = await _dbHelper.getPackages();
-    final filteredIds = list.map((p) => p.id).toSet();
-
-    final newAllPackages = <Package>[];
-    int filteredIdx = 0;
-    for (final p in allPackages) {
-      if (filteredIds.contains(p.id)) {
-        newAllPackages.add(list[filteredIdx]);
-        filteredIdx++;
-      } else {
-        newAllPackages.add(p);
-      }
-    }
-
-    await _dbHelper.updateSortOrders(newAllPackages.map((p) => p.id).toList());
+    // SQLite Persistence - Update the sort orders of all packages in this group
+    await _dbHelper.updateSortOrders(list.map((p) => p.id).toList());
     await refresh();
   }
 

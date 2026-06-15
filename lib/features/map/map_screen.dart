@@ -358,14 +358,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Widget build(BuildContext context) {
     // Listen to real-time location stream and update user position
     ref.listen<AsyncValue<Position>>(locationStreamProvider, (prev, next) {
-      next.whenData((pos) {
-        final target = LatLng(pos.latitude, pos.longitude);
-        ref.read(mapStateNotifierProvider.notifier).updateUserPosition(target);
-        // Center the map on user location the first time it loads
-        if (_isMapReady && (prev == null || !prev.hasValue)) {
-          _mapController.move(target, 15.0);
-        }
-      });
+      next.when(
+        data: (pos) {
+          final target = LatLng(pos.latitude, pos.longitude);
+          ref.read(mapStateNotifierProvider.notifier).updateUserPosition(target);
+          // Center the map on user location the first time it loads
+          if (_isMapReady && (prev == null || !prev.hasValue || prev.hasError)) {
+            _mapController.move(target, 15.0);
+          }
+        },
+        error: (err, stack) {
+          debugPrint('=== LOCATION STREAM ERROR: $err');
+        },
+        loading: () {},
+      );
     });
 
     final tokens = context.tokens;
