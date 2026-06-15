@@ -1,26 +1,26 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'packages_provider.dart';
+part of 'history_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$packagesNotifierHash() => r'd730e9f3cb2341286157797b7afa8a72b5519895';
+String _$historyNotifierHash() => r'670d0a5e91305962e45e0172829e959b7baf1891';
 
-/// See also [PackagesNotifier].
-@ProviderFor(PackagesNotifier)
-final packagesNotifierProvider =
-    AutoDisposeNotifierProvider<PackagesNotifier, PackagesState>.internal(
-      PackagesNotifier.new,
-      name: r'packagesNotifierProvider',
+/// See also [HistoryNotifier].
+@ProviderFor(HistoryNotifier)
+final historyNotifierProvider =
+    AutoDisposeNotifierProvider<HistoryNotifier, HistoryState>.internal(
+      HistoryNotifier.new,
+      name: r'historyNotifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$packagesNotifierHash,
+          : _$historyNotifierHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$PackagesNotifier = AutoDisposeNotifier<PackagesState>;
+typedef _$HistoryNotifier = AutoDisposeNotifier<HistoryState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
@@ -10,6 +10,7 @@ import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../../shared/utils/currency_formatter.dart';
 import '../../core/database/db_helper.dart';
+import '../../shared/widgets/status_badge.dart';
 import 'packages_provider.dart';
 import 'package:brad/features/packages/package_card.dart';
 
@@ -22,6 +23,7 @@ class PackagesScreen extends ConsumerStatefulWidget {
 
 class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   final TextEditingController _searchController = TextEditingController();
+  int _currentTab = 0; // 0 = Packages List, 1 = Totals & Stats
 
   @override
   void initState() {
@@ -69,124 +71,468 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxW = constraints.maxWidth;
-          final maxH = constraints.maxHeight;
+      body: state.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                const ConnectivityBanner(),
 
-          // Default FAB position boundary calculations
-
-          return Stack(
-            children: [
-              Column(
-                children: [
-                  const ConnectivityBanner(),
-
-                  // Search Bar
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.zero,
-                        boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search tracking #, name, barangay...',
-                          prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear_rounded),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                  },
-                                )
-                              : null,
-                        ),
+                // Search Bar
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.zero,
+                      boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search tracking #, name, barangay...',
+                        prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              )
+                            : null,
                       ),
                     ),
                   ),
+                ),
 
-                  // Stackable Filter Chips
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    clipBehavior: Clip.none,
+                // Stackable Filter Chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  clipBehavior: Clip.none,
+                  child: Row(
+                    children: [
+                      // Status Filter
+                      _buildFilterChip(
+                        label: state.statusFilters.isEmpty
+                            ? 'All Statuses'
+                            : (state.statusFilters.length == 1
+                                ? state.statusFilters.first.toUpperCase()
+                                : 'Statuses (${state.statusFilters.length})'),
+                        isActive: state.statusFilters.isNotEmpty,
+                        onTap: () => _showStatusFilterDialog(context, state.statusFilters, state.uniqueStatuses, notifier),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Location Barangay Filter
+                      _buildFilterChip(
+                        label: state.barangayFilters.isEmpty
+                            ? 'All Barangays'
+                            : (state.barangayFilters.length == 1
+                                ? state.barangayFilters.first
+                                : 'Barangays (${state.barangayFilters.length})'),
+                        isActive: state.barangayFilters.isNotEmpty,
+                        onTap: () => _showBarangayFilterDialog(context, state.barangayFilters, state.uniqueBarangays, notifier),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Payment Type Filter
+                      _buildFilterChip(
+                        label: state.paymentTypeFilters.isEmpty
+                            ? 'All Payments'
+                            : (state.paymentTypeFilters.length == 1
+                                ? (state.paymentTypeFilters.first == 'cod_cash'
+                                    ? 'COD Cash'
+                                    : (state.paymentTypeFilters.first == 'cod_digital' ? 'COD Digital' : 'Prepaid'))
+                                : 'Payments (${state.paymentTypeFilters.length})'),
+                        isActive: state.paymentTypeFilters.isNotEmpty,
+                        onTap: () => _showPaymentFilterDialog(context, state.paymentTypeFilters, state.uniquePaymentTypes, notifier),
+                      ),
+
+                      // Clear Filters Button
+                      if (state.statusFilters.isNotEmpty || state.barangayFilters.isNotEmpty || state.paymentTypeFilters.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed: () => notifier.clearFilters(),
+                          icon: const Icon(Icons.clear_all_rounded, size: 16),
+                          label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Custom Tab Switcher
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: tokens.border, width: 2.0),
+                      boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                      color: tokens.surface,
+                    ),
                     child: Row(
                       children: [
-                        // Status Filter
-                        _buildFilterChip(
-                          label: state.statusFilters.isEmpty
-                              ? 'All Statuses'
-                              : (state.statusFilters.length == 1
-                                  ? state.statusFilters.first.toUpperCase()
-                                  : 'Statuses (${state.statusFilters.length})'),
-                          isActive: state.statusFilters.isNotEmpty,
-                          onTap: () => _showStatusFilterDialog(context, state.statusFilters, state.uniqueStatuses, notifier),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Location Barangay Filter
-                        _buildFilterChip(
-                          label: state.barangayFilters.isEmpty
-                              ? 'All Barangays'
-                              : (state.barangayFilters.length == 1
-                                  ? state.barangayFilters.first
-                                  : 'Barangays (${state.barangayFilters.length})'),
-                          isActive: state.barangayFilters.isNotEmpty,
-                          onTap: () => _showBarangayFilterDialog(context, state.barangayFilters, state.uniqueBarangays, notifier),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Payment Type Filter
-                        _buildFilterChip(
-                          label: state.paymentTypeFilters.isEmpty
-                              ? 'All Payments'
-                              : (state.paymentTypeFilters.length == 1
-                                  ? (state.paymentTypeFilters.first == 'cod_cash'
-                                      ? 'COD Cash'
-                                      : (state.paymentTypeFilters.first == 'cod_digital' ? 'COD Digital' : 'Prepaid'))
-                                  : 'Payments (${state.paymentTypeFilters.length})'),
-                          isActive: state.paymentTypeFilters.isNotEmpty,
-                          onTap: () => _showPaymentFilterDialog(context, state.paymentTypeFilters, state.uniquePaymentTypes, notifier),
-                        ),
-
-                        // Clear Filters Button
-                        if (state.statusFilters.isNotEmpty || state.barangayFilters.isNotEmpty || state.paymentTypeFilters.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: () => notifier.clearFilters(),
-                            icon: const Icon(Icons.clear_all_rounded, size: 16),
-                            label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _currentTab = 0;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              color: _currentTab == 0 ? tokens.accent : tokens.surface,
+                              alignment: Alignment.center,
+                              child: Text(
+                                'PACKAGES LIST',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: _currentTab == 0 ? Colors.white : tokens.text,
+                                ),
+                              ),
+                            ),
                           ),
-                        ],
+                        ),
+                        Container(
+                          width: 2.0,
+                          height: 38,
+                          color: tokens.border,
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _currentTab = 1;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              color: _currentTab == 1 ? tokens.accent : tokens.surface,
+                              alignment: Alignment.center,
+                              child: Text(
+                                "TODAY'S TOTALS",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: _currentTab == 1 ? Colors.white : tokens.text,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 16),
 
-                  // Packages List
+                // Tab Content View
+                if (_currentTab == 0) ...[
+                  // Grouped Packages List
                   Expanded(
-                    child: state.isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : state.packages.isEmpty
-                            ? _buildEmptyState(tokens)
-                            : _buildPackageList(state.packages),
+                    child: state.packages.isEmpty && state.activeRide == null
+                        ? _buildEmptyState(tokens)
+                        : _buildGroupedPackages(tokens, state.packages, state.activeRide, state.todayRides, notifier),
                   ),
-
                   // Sticky Bottom Summary Bar
                   _buildSummaryBar(tokens, state.summary),
+                ] else ...[
+                  Expanded(
+                    child: _buildTotalsAndStatsTab(tokens, state.packages, state.activeRide, state.todayRides),
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _buildGroupedPackages(
+    AppColorTokens tokens,
+    List<Package> packages,
+    Ride? activeRide,
+    List<Ride> todayRides,
+    PackagesNotifier notifier,
+  ) {
+    final Map<String?, List<Package>> grouped = {};
+    for (final p in packages) {
+      grouped.putIfAbsent(p.rideId, () => []).add(p);
+    }
+
+    final List<Widget> children = [];
+
+    children.add(_buildRideBannerCard(tokens, activeRide, notifier));
+    children.add(const SizedBox(height: 12));
+
+    if (activeRide != null) {
+      final ridePkgs = grouped[activeRide.id] ?? [];
+      children.add(_buildRideGroupHeader(
+        tokens,
+        title: 'RIDE #${activeRide.rideNumber} (ACTIVE)',
+        timeStr: 'Started at ${DateFormat('hh:mm a').format(activeRide.startedAt)}',
+        packages: ridePkgs,
+      ));
+      if (ridePkgs.isEmpty) {
+        children.add(_buildNoPackagesInGroup(tokens, 'No packages added to this ride yet. Scan packages or add them to assign.'));
+      } else {
+        children.add(_buildPackagesListView(ridePkgs));
+      }
+      children.add(const SizedBox(height: 16));
+    }
+
+    final completedRides = todayRides.where((r) => r.endedAt != null).toList();
+    for (final ride in completedRides) {
+      final ridePkgs = grouped[ride.id] ?? [];
+      final startStr = DateFormat('hh:mm a').format(ride.startedAt);
+      final endStr = DateFormat('hh:mm a').format(ride.endedAt!);
+      children.add(_buildRideGroupHeader(
+        tokens,
+        title: 'RIDE #${ride.rideNumber} (COMPLETED)',
+        timeStr: '$startStr - $endStr',
+        packages: ridePkgs,
+      ));
+      if (ridePkgs.isEmpty) {
+        children.add(_buildNoPackagesInGroup(tokens, 'No packages were handled in this ride.'));
+      } else {
+        children.add(_buildPackagesListView(ridePkgs));
+      }
+      children.add(const SizedBox(height: 16));
+    }
+
+    final unassignedPkgs = grouped[null] ?? [];
+    if (unassignedPkgs.isNotEmpty || (activeRide == null && completedRides.isEmpty)) {
+      children.add(_buildRideGroupHeader(
+        tokens,
+        title: 'UNASSIGNED PACKAGES',
+        timeStr: 'Not assigned to any ride',
+        packages: unassignedPkgs,
+      ));
+      if (unassignedPkgs.isEmpty) {
+        children.add(_buildNoPackagesInGroup(tokens, 'All packages have been assigned to rides.'));
+      } else {
+        children.add(_buildPackagesListView(unassignedPkgs));
+      }
+      children.add(const SizedBox(height: 16));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: children,
+    );
+  }
+
+  Widget _buildRideBannerCard(
+    AppColorTokens tokens,
+    Ride? activeRide,
+    PackagesNotifier notifier,
+  ) {
+    if (activeRide == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: tokens.surface,
+          border: Border.all(color: tokens.border, width: 1.5),
+          boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No Active Ride',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.text),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Start a ride to automatically group scanned packages.',
+                    style: TextStyle(fontSize: 12, color: tokens.textSubtle),
+                  ),
                 ],
               ),
-              DraggableScanFab(
-                maxW: maxW,
-                maxH: maxH,
+            ),
+            const SizedBox(width: 12),
+            OffsetShadowButton.elevated(
+              onPressed: () => notifier.startRide(),
+              backgroundColor: tokens.accent,
+              child: const Text(
+                'START RIDE',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: tokens.surface,
+          border: Border.all(color: tokens.border, width: 1.5),
+          boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'RIDE #${activeRide.rideNumber} IS ACTIVE',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.accent),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'All newly scanned packages will be added here.',
+                    style: TextStyle(fontSize: 12, color: tokens.textSubtle),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            OffsetShadowButton.elevated(
+              onPressed: () => _confirmEndRide(context, notifier),
+              backgroundColor: AppStatusColors.error,
+              child: const Text(
+                'END RIDE',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _confirmEndRide(BuildContext context, PackagesNotifier notifier) {
+    final tokens = context.tokens;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: OffsetShadowCard(
+            backgroundColor: tokens.surface,
+            shadowColor: tokens.border,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'End Current Ride?',
+                  style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to end this ride? Any packages not yet delivered will be moved back to unassigned.',
+                  style: TextStyle(fontSize: 13, color: tokens.textSubtle),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                    ),
+                    const SizedBox(width: 8),
+                    OffsetShadowButton.elevated(
+                      onPressed: () {
+                        notifier.endRide();
+                        Navigator.pop(context);
+                      },
+                      backgroundColor: AppStatusColors.error,
+                      child: const Text('END RIDE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRideGroupHeader(
+    AppColorTokens tokens, {
+    required String title,
+    required String timeStr,
+    required List<Package> packages,
+  }) {
+    double totalCod = 0;
+    for (final p in packages) {
+      totalCod += p.codCash + p.codDigital;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: tokens.text,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                timeStr,
+                style: TextStyle(fontSize: 10, color: tokens.textSubtle),
               ),
             ],
-          );
-        },
+          ),
+          Text(
+            'COD: ${CurrencyFormatter.formatNoDecimal(totalCod)}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: tokens.accent,
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildNoPackagesInGroup(AppColorTokens tokens, String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.border.withValues(alpha: 0.5), width: 1.0),
+      ),
+      child: Text(
+        message,
+        style: TextStyle(fontSize: 11, color: tokens.textSubtle, fontStyle: FontStyle.italic),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  Widget _buildPackagesListView(List<Package> packages) {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: packages.length,
+      itemBuilder: (context, index) {
+        final pkg = packages[index];
+        return PackageCard(
+          key: ValueKey(pkg.id),
+          package: pkg,
+          showDragHandle: false,
+        );
+      },
     );
   }
 
@@ -231,33 +577,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     );
   }
 
-  Widget _buildPackageList(List<Package> packages) {
-    return ReorderableListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: packages.length,
-      onReorder: (oldIndex, newIndex) {
-        ref.read(packagesNotifierProvider.notifier).reorder(oldIndex, newIndex);
-      },
-      itemBuilder: (context, index) {
-        final pkg = packages[index];
-        return PackageCard(
-          key: ValueKey(pkg.id),
-          package: pkg,
-          showDragHandle: true,
-        );
-      },
-      proxyDecorator: (child, index, animation) {
-        return ScaleTransition(
-          scale: animation.drive(Tween(begin: 1.0, end: 1.03)),
-          child: Material(
-            color: Colors.transparent,
-            elevation: 0,
-            child: child,
-          ),
-        );
-      },
-    );
-  }
 
   Widget _buildEmptyState(AppColorTokens tokens) {
     return Center(
@@ -647,72 +966,233 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
       },
     );
   }
-}
 
-class DraggableScanFab extends StatefulWidget {
-  final double maxW;
-  final double maxH;
+  Map<String, dynamic> _computeStats(List<Package> pkgs) {
+    int total = pkgs.length;
+    final statusCounts = <String, int>{};
+    final barangayCounts = <String, int>{};
 
-  const DraggableScanFab({
-    super.key,
-    required this.maxW,
-    required this.maxH,
-  });
+    for (final p in pkgs) {
+      statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1;
+      final brgy = p.barangay ?? 'Unknown';
+      barangayCounts[brgy] = (barangayCounts[brgy] ?? 0) + 1;
+    }
 
-  @override
-  State<DraggableScanFab> createState() => _DraggableScanFabState();
-}
+    return {
+      'total': total,
+      'status': statusCounts,
+      'barangay': barangayCounts,
+    };
+  }
 
-class _DraggableScanFabState extends State<DraggableScanFab> {
-  double? _fabX;
-  double? _fabY;
+  Widget _buildTotalsAndStatsTab(
+    AppColorTokens tokens,
+    List<Package> packages,
+    Ride? activeRide,
+    List<Ride> todayRides,
+  ) {
+    final overall = _computeStats(packages);
 
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    
-    // Default FAB position at bottom right (FAB is 56x56, plus shadow offset/padding)
-    final defaultX = widget.maxW - 72.0;
-    final defaultY = widget.maxH - 72.0;
-
-    final fabX = (_fabX ?? defaultX).clamp(16.0, widget.maxW - 72.0);
-    final fabY = (_fabY ?? defaultY).clamp(16.0, widget.maxH - 72.0);
-
-    return Positioned.fill(
-      child: Stack(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Transform.translate(
-            offset: Offset(fabX, fabY),
-            child: RepaintBoundary(
-              child: SizedBox(
-                width: 56,
-                height: 56,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    setState(() {
-                      final activeX = _fabX ?? defaultX;
-                      final activeY = _fabY ?? defaultY;
-                      _fabX = (activeX + details.delta.dx).clamp(16.0, widget.maxW - 72.0);
-                      _fabY = (activeY + details.delta.dy).clamp(16.0, widget.maxH - 72.0);
-                    });
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.zero,
-                      boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
-                    ),
-                    child: FloatingActionButton(
-                      onPressed: () {
-                        // Open Scan tab or navigate to new package form
-                        context.push('/scan');
-                      },
-                      child: const Icon(Icons.qr_code_scanner_rounded),
-                    ),
-                  ),
+          // Section: Overall Summary Header
+          Text(
+            'OVERALL SUMMARY',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 8),
+          _buildStatsCard(
+            tokens: tokens,
+            title: "TODAY'S OVERALL STATS",
+            color: tokens.accentSoft,
+            borderColor: tokens.accent,
+            stats: overall,
+          ),
+          const SizedBox(height: 24),
+
+          // Section: Ride-by-Ride Statistics Header
+          Text(
+            'PER-RIDE BREAKDOWN',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 8),
+
+          // Active Ride (if present)
+          if (activeRide != null) ...[
+            _buildRideStatsCard(
+              tokens: tokens,
+              rideTitle: 'RIDE #${activeRide.rideNumber} (ACTIVE)',
+              color: tokens.surface,
+              borderColor: tokens.border,
+              ridePkgs: packages.where((p) => p.rideId == activeRide.id).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Today's Completed Rides
+          ...todayRides.where((r) => r.endedAt != null).map((ride) {
+            return Column(
+              children: [
+                _buildRideStatsCard(
+                  tokens: tokens,
+                  rideTitle: 'RIDE #${ride.rideNumber} (COMPLETED)',
+                  color: tokens.surface,
+                  borderColor: tokens.border,
+                  ridePkgs: packages.where((p) => p.rideId == ride.id).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+            );
+          }),
+
+          // Unassigned Packages
+          _buildRideStatsCard(
+            tokens: tokens,
+            rideTitle: 'UNASSIGNED PACKAGES',
+            color: tokens.surface,
+            borderColor: tokens.border,
+            ridePkgs: packages.where((p) => p.rideId == null).toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRideStatsCard({
+    required AppColorTokens tokens,
+    required String rideTitle,
+    required Color color,
+    required Color borderColor,
+    required List<Package> ridePkgs,
+  }) {
+    final stats = _computeStats(ridePkgs);
+    return _buildStatsCard(
+      tokens: tokens,
+      title: rideTitle,
+      color: color,
+      borderColor: borderColor,
+      stats: stats,
+    );
+  }
+
+  Widget _buildStatsCard({
+    required AppColorTokens tokens,
+    required String title,
+    required Color color,
+    required Color borderColor,
+    required Map<String, dynamic> stats,
+  }) {
+    final total = stats['total'] as int;
+    final statusCounts = stats['status'] as Map<String, int>;
+    final barangayCounts = stats['barangay'] as Map<String, int>;
+
+    return OffsetShadowCard(
+      backgroundColor: color,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: tokens.surface,
+                  border: Border.all(color: tokens.border, width: 1.5),
+                ),
+                child: Text(
+                  '$total PKGS',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, fontFamily: 'JetBrains Mono'),
                 ),
               ),
-            ),
+            ],
           ),
+          const Divider(height: 24, thickness: 1.5),
+
+          if (total == 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No packages match the active filters.',
+                style: TextStyle(color: tokens.textSubtle, fontSize: 12, fontStyle: FontStyle.italic),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else ...[
+            // Statuses Grid/Wrap
+            const Text(
+              'BY STATUS',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: statusCounts.entries.map((entry) {
+                final status = entry.key;
+                final count = entry.value;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: tokens.surface,
+                    border: Border.all(color: tokens.border, width: 1.0),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      StatusBadge(status: status),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$count',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, fontFamily: 'JetBrains Mono'),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Barangays Grid/Wrap
+            const Text(
+              'BY BARANGAY / LOCATION',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: barangayCounts.entries.map((entry) {
+                final brgy = entry.key;
+                final count = entry.value;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: tokens.surface,
+                    border: Border.all(color: tokens.border, width: 1.0),
+                  ),
+                  child: Text(
+                    '${brgy.toUpperCase()}: $count',
+                    style: TextStyle(
+                      color: tokens.text,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      fontFamily: 'JetBrains Mono',
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );

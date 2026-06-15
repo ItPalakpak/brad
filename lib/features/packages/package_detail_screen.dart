@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/database/db_helper.dart';
 import '../../core/theme/app_theme.dart';
@@ -19,6 +20,7 @@ import '../../shared/utils/date_formatter.dart';
 import '../map/pin_picker_sheet.dart';
 import 'packages_provider.dart';
 import 'package:brad/features/packages/package_form.dart';
+import 'package:brad/features/packages/delivery_confirmation_modal.dart';
 
 class PackageDetailScreen extends ConsumerStatefulWidget {
   final String packageId;
@@ -367,6 +369,55 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // Ride Assignment Section
+                Text(
+                  'RIDE ASSIGNMENT',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 8),
+                OffsetShadowCard(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.directions_bike_rounded, color: tokens.accent),
+                          const SizedBox(width: 12),
+                          FutureBuilder<Ride?>(
+                            future: p.rideId != null ? DbHelper.instance.getRideById(p.rideId!) : Future.value(null),
+                            builder: (context, snapshot) {
+                              final ride = snapshot.data;
+                              if (p.rideId == null) {
+                                return const Text(
+                                  'Unassigned',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                );
+                              }
+                              if (ride == null) {
+                                return const Text(
+                                  'Loading...',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                );
+                              }
+                              final statusStr = ride.endedAt == null ? 'ACTIVE' : 'COMPLETED';
+                              return Text(
+                                'Ride #${ride.rideNumber} ($statusStr)',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _showChangeRideModal(p),
+                        icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                        label: const Text('CHANGE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // Location details + mini map
                 Text(
                   'DELIVERY LOCATION',
@@ -529,6 +580,60 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   const SizedBox(height: 16),
                 ],
 
+                // Delivery Evidence Photo Section
+                if (p.deliveryPhotoPath != null && File(p.deliveryPhotoPath!).existsSync()) ...[
+                  Text(
+                    'DELIVERY EVIDENCE',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  OffsetShadowCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => Dialog(
+                                backgroundColor: Colors.transparent,
+                                insetPadding: const EdgeInsets.all(12),
+                                child: Stack(
+                                  alignment: Alignment.topRight,
+                                  children: [
+                                    InteractiveViewer(
+                                      child: Image.file(
+                                        File(p.deliveryPhotoPath!),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close_rounded, color: Colors.white, size: 30),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.zero,
+                            child: SizedBox(
+                              height: 200,
+                              child: Image.file(
+                                File(p.deliveryPhotoPath!),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 // Financial details
                 Text(
                   'FINANCIAL DETAILS',
@@ -672,15 +777,21 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                     shadowColor: tokens.border,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     onTap: () async {
-                      await ref.read(packagesNotifierProvider.notifier).markDelivered(p.id);
-                      _loadPackageDetails();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: AppStatusColors.success,
-                            content: Text('Package #${p.trackingNumber} marked as Delivered!'),
-                          ),
-                        );
+                      final confirmed = await showDeliveryConfirmationModal(
+                        context: context,
+                        package: p,
+                        ref: ref,
+                      );
+                      if (confirmed) {
+                        _loadPackageDetails();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: AppStatusColors.success,
+                              content: Text('Package #${p.trackingNumber} marked as Delivered!'),
+                            ),
+                          );
+                        }
                       }
                     },
                     child: Center(
@@ -693,6 +804,48 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                         ),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OffsetShadowCard(
+                          backgroundColor: AppStatusColors.warning,
+                          shadowColor: tokens.border,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onTap: () => _showRescheduleModal(context),
+                          child: Center(
+                            child: Text(
+                              'RESCHEDULE',
+                              style: TextStyle(
+                                color: tokens.textInvert,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OffsetShadowCard(
+                          backgroundColor: AppStatusColors.error,
+                          shadowColor: tokens.border,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onTap: () => _showRejectModal(context),
+                          child: Center(
+                            child: Text(
+                              'REJECT',
+                              style: TextStyle(
+                                color: tokens.textInvert,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 32),
                 ],
@@ -762,6 +915,331 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
               child: const Text('DELETE'),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  void _showRescheduleModal(BuildContext context) async {
+    final tokens = context.tokens;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 90)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: tokens.accent,
+              brightness: Theme.of(context).brightness,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && _package != null) {
+      await ref.read(packagesNotifierProvider.notifier).markRescheduled(_package!.id, picked);
+      _loadPackageDetails();
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          backgroundColor: AppStatusColors.warning,
+          content: Text('Package rescheduled to ${DateFormat('yyyy-MM-dd').format(picked)}'),
+        ),
+      );
+    }
+  }
+
+  void _showRejectModal(BuildContext context) {
+    final tokens = context.tokens;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    String selectedReason = 'Refused to accept';
+    final customReasonController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              child: OffsetShadowCard(
+                backgroundColor: tokens.surface,
+                shadowColor: tokens.border,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Select Rejection Reason',
+                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    ...['Refused to accept', 'Wrong address', 'Cannot contact customer', 'Other'].map((reason) {
+                      final isSelected = selectedReason == reason;
+                      return GestureDetector(
+                        onTap: () {
+                          setDialogState(() {
+                            selectedReason = reason;
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: isSelected ? tokens.accentSoft : tokens.surface,
+                            border: Border.all(
+                              color: isSelected ? tokens.accent : tokens.border,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 18,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected ? tokens.accent : tokens.textSubtle,
+                                    width: 1.5,
+                                  ),
+                                  color: isSelected ? tokens.accent : Colors.transparent,
+                                ),
+                                child: isSelected
+                                    ? const Center(
+                                        child: Icon(
+                                          Icons.circle,
+                                          size: 8,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                reason,
+                                style: TextStyle(
+                                  color: tokens.text,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    if (selectedReason == 'Other') ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.zero,
+                          boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                        ),
+                        child: TextField(
+                          controller: customReasonController,
+                          decoration: const InputDecoration(
+                            labelText: 'Specify Reason',
+                            hintText: 'Enter reason here...',
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                        ),
+                        const SizedBox(width: 8),
+                        OffsetShadowButton.elevated(
+                          onPressed: () async {
+                            final reason = selectedReason == 'Other'
+                                ? customReasonController.text.trim()
+                                : selectedReason;
+                            if (reason.isEmpty) return;
+
+                            Navigator.pop(context);
+                            if (_package != null) {
+                              await ref.read(packagesNotifierProvider.notifier).markRejected(
+                                    _package!.id,
+                                    reason,
+                                  );
+                              _loadPackageDetails();
+                              scaffoldMessenger.showSnackBar(
+                                SnackBar(
+                                  backgroundColor: AppStatusColors.error,
+                                  content: Text('Package rejected: $reason'),
+                                ),
+                              );
+                            }
+                          },
+                          backgroundColor: AppStatusColors.error,
+                          child: const Text('REJECT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showChangeRideModal(Package p) async {
+    final tokens = context.tokens;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // Fetch rides of today
+    final todayRides = await DbHelper.instance.getRidesForDate(DateTime.now());
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: OffsetShadowCard(
+            backgroundColor: tokens.surface,
+            shadowColor: tokens.border,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Change Ride Assignment',
+                  style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 16),
+                // Unassigned Option
+                GestureDetector(
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final updated = p.copyWith(rideId: null);
+                    await ref.read(packagesNotifierProvider.notifier).updatePackage(updated);
+                    _loadPackageDetails();
+                    scaffoldMessenger.showSnackBar(
+                      const SnackBar(
+                        backgroundColor: AppStatusColors.warning,
+                        content: Text('Package unassigned from ride.'),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: p.rideId == null ? tokens.accentSoft : tokens.surface,
+                      border: Border.all(
+                        color: p.rideId == null ? tokens.accent : tokens.border,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.do_not_disturb_on_outlined,
+                          color: p.rideId == null ? tokens.accent : tokens.textSubtle,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Unassigned (Remove from Ride)',
+                          style: TextStyle(
+                            color: tokens.text,
+                            fontWeight: p.rideId == null ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // List of today's rides
+                if (todayRides.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text(
+                      'No rides created today yet.',
+                      style: TextStyle(color: tokens.textSubtle, fontSize: 12, fontStyle: FontStyle.italic),
+                    ),
+                  )
+                else
+                  ...todayRides.map((ride) {
+                    final isSelected = p.rideId == ride.id;
+                    final isCurrentActive = ride.endedAt == null;
+                    return GestureDetector(
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final updated = p.copyWith(rideId: ride.id);
+                        await ref.read(packagesNotifierProvider.notifier).updatePackage(updated);
+                        _loadPackageDetails();
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            backgroundColor: AppStatusColors.success,
+                            content: Text('Package assigned to Ride #${ride.rideNumber}.'),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSelected ? tokens.accentSoft : tokens.surface,
+                          border: Border.all(
+                            color: isSelected ? tokens.accent : tokens.border,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.directions_bike_rounded,
+                              color: isSelected ? tokens.accent : tokens.textSubtle,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Ride #${ride.rideNumber} ${isCurrentActive ? '(Active)' : '(Completed)'}',
+                              style: TextStyle(
+                                color: tokens.text,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'Close',
+                        style: TextStyle(color: tokens.textSubtle, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         );
       },
     );

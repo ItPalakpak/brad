@@ -320,7 +320,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                     ),
                                     const SizedBox(height: 12),
                                     const Text(
-                                      'This will delete all packages with a status of "delivered" from SQLite database to free up space.',
+                                      'This will automatically back up all shift data to an Excel file and then delete all packages with a status of "delivered" from the database.',
                                       style: TextStyle(fontSize: 13),
                                     ),
                                     const SizedBox(height: 20),
@@ -350,7 +350,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             await ref.read(packagesNotifierProvider.notifier).clearDelivered();
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Delivered packages cleared.')),
+                                  const SnackBar(content: Text('Delivered packages backed up and cleared.')),
                               );
                             }
                           }

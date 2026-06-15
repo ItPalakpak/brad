@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter/foundation.dart';
+
 
 import '../../core/database/db_helper.dart';
 import '../../core/services/geofence_manager.dart';
@@ -24,6 +26,8 @@ class PackagesState {
   final List<String> uniquePaymentTypes;
   final List<String> uniqueStreets;
   final List<String> uniqueZones;
+  final Ride? activeRide;
+  final List<Ride> todayRides;
 
   PackagesState({
     required this.packages,
@@ -39,6 +43,8 @@ class PackagesState {
     this.uniquePaymentTypes = const [],
     this.uniqueStreets = const [],
     this.uniqueZones = const [],
+    this.activeRide,
+    this.todayRides = const [],
   });
 
   PackagesState copyWith({
@@ -55,6 +61,8 @@ class PackagesState {
     List<String>? uniquePaymentTypes,
     List<String>? uniqueStreets,
     List<String>? uniqueZones,
+    Ride? activeRide,
+    List<Ride>? todayRides,
   }) {
     return PackagesState(
       packages: packages ?? this.packages,
@@ -70,6 +78,8 @@ class PackagesState {
       uniquePaymentTypes: uniquePaymentTypes ?? this.uniquePaymentTypes,
       uniqueStreets: uniqueStreets ?? this.uniqueStreets,
       uniqueZones: uniqueZones ?? this.uniqueZones,
+      activeRide: activeRide ?? this.activeRide,
+      todayRides: todayRides ?? this.todayRides,
     );
   }
 }
@@ -95,19 +105,23 @@ class PackagesNotifier extends _$PackagesNotifier {
       uniquePaymentTypes: [],
       uniqueStreets: [],
       uniqueZones: [],
+      activeRide: null,
+      todayRides: const [],
     );
   }
 
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true);
     try {
-      final list = await _dbHelper.getPackages(
+      final list = await _dbHelper.getTodayPackages(
         searchQuery: state.searchQuery,
         statusFilters: state.statusFilters,
         barangayFilters: state.barangayFilters,
         paymentTypeFilters: state.paymentTypeFilters,
       );
 
+      final activeRide = await _dbHelper.getActiveRide();
+      final todayRides = await _dbHelper.getRidesForDate(DateTime.now());
       final summary = await _dbHelper.getPaymentSummary();
       final barangays = await _dbHelper.getUniqueBarangays();
       final cities = await _dbHelper.getUniqueCities();
@@ -125,6 +139,8 @@ class PackagesNotifier extends _$PackagesNotifier {
         uniquePaymentTypes: paymentTypes,
         uniqueStreets: streets,
         uniqueZones: zones,
+        activeRide: activeRide,
+        todayRides: todayRides,
         isLoading: false,
       );
     } catch (_) {
@@ -198,9 +214,101 @@ class PackagesNotifier extends _$PackagesNotifier {
   }
 
   Future<void> addPackage(Package package) async {
-    await _dbHelper.insertPackage(package);
+    final active = state.activeRide;
+    var pkg = package;
+    if (active != null) {
+      pkg = package.copyWith(rideId: active.id);
+    }
+    await _dbHelper.insertPackage(pkg);
     await refresh();
     // Trigger geofence resync
+    ref.read(geofenceManagerProvider).syncGeofences();
+  }
+
+  Future<void> startRide() async {
+    final active = await _dbHelper.getActiveRide();
+    if (active != null) return;
+
+    final now = DateTime.now();
+    final nextNum = await _dbHelper.getNextRideNumberForDate(now);
+    final newRide = Ride(
+      id: 'ride_${now.millisecondsSinceEpoch}',
+      rideNumber: nextNum,
+      date: now,
+      startedAt: now,
+    );
+    await _dbHelper.insertRide(newRide);
+
+    final todayPackages = await _dbHelper.getTodayPackages();
+    for (final pkg in todayPackages) {
+      if (pkg.rideId == null && (pkg.status == 'pending' || pkg.status == 'failed')) {
+        await _dbHelper.updatePackage(pkg.copyWith(rideId: newRide.id));
+      }
+    }
+
+    await refresh();
+  }
+
+  Future<void> endRide() async {
+    final active = state.activeRide;
+    if (active == null) return;
+
+    final updated = active.copyWith(endedAt: DateTime.now());
+    await _dbHelper.updateRide(updated);
+
+    final ridePackages = await _dbHelper.getPackagesForRide(active.id);
+    for (final pkg in ridePackages) {
+      if (pkg.status == 'pending') {
+        await _dbHelper.updatePackage(pkg.copyWith(rideId: null));
+      }
+    }
+
+    await refresh();
+  }
+
+  Future<void> markRescheduled(String id, DateTime date) async {
+    final pkg = await _dbHelper.getPackageById(id);
+    if (pkg == null) return;
+
+    final updated = pkg.copyWith(
+      status: 'rescheduled',
+      rescheduledDate: date,
+      updatedAt: DateTime.now(),
+    );
+    await _dbHelper.updatePackage(updated);
+
+    final attempt = DeliveryAttempt(
+      packageId: id,
+      status: 'failed',
+      notes: 'Rescheduled to ${DateFormat('yyyy-MM-dd').format(date)}',
+      attemptedAt: DateTime.now(),
+    );
+    await _dbHelper.insertAttempt(attempt);
+
+    await refresh();
+    ref.read(geofenceManagerProvider).syncGeofences();
+  }
+
+  Future<void> markRejected(String id, String reason) async {
+    final pkg = await _dbHelper.getPackageById(id);
+    if (pkg == null) return;
+
+    final updated = pkg.copyWith(
+      status: 'rejected',
+      rejectionReason: reason,
+      updatedAt: DateTime.now(),
+    );
+    await _dbHelper.updatePackage(updated);
+
+    final attempt = DeliveryAttempt(
+      packageId: id,
+      status: 'failed',
+      notes: 'Rejected: $reason',
+      attemptedAt: DateTime.now(),
+    );
+    await _dbHelper.insertAttempt(attempt);
+
+    await refresh();
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
@@ -218,14 +326,24 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
-  Future<void> markDelivered(String id) async {
+  Future<void> markDelivered(
+    String id, {
+    double tips = 0,
+    double extraAmount = 0,
+    String? extraLabel,
+    String? deliveryPhotoPath,
+  }) async {
     final pkg = await _dbHelper.getPackageById(id);
     if (pkg == null) return;
 
     final updated = pkg.copyWith(
       status: 'delivered',
+      tips: tips,
+      extraAmount: extraAmount,
+      extraLabel: extraLabel,
       deliveredAt: DateTime.now(),
       updatedAt: DateTime.now(),
+      deliveryPhotoPath: deliveryPhotoPath,
     );
 
     // Write package updates
@@ -300,6 +418,11 @@ class PackagesNotifier extends _$PackagesNotifier {
   }
 
   Future<void> clearDelivered() async {
+    try {
+      await exportToXlsx();
+    } catch (e) {
+      debugPrint('Auto-backup before clear failed: $e');
+    }
     await _dbHelper.clearDeliveredPackages();
     await refresh();
     ref.read(geofenceManagerProvider).syncGeofences();
@@ -333,7 +456,8 @@ class PackagesNotifier extends _$PackagesNotifier {
       'Sort Order',
       'Created At',
       'Delivered At',
-      'Attempts'
+      'Attempts',
+      'Delivery Photo'
     ];
 
     sheetObject.appendRow(headers.map((h) => TextCellValue(h)).toList());
@@ -359,6 +483,7 @@ class PackagesNotifier extends _$PackagesNotifier {
         TextCellValue(p.createdAt.toIso8601String()),
         TextCellValue(p.deliveredAt?.toIso8601String() ?? ''),
         IntCellValue(p.attemptCount),
+        TextCellValue(p.deliveryPhotoPath ?? ''),
       ]);
     }
 

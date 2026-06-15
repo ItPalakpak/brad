@@ -22,13 +22,17 @@ class Package {
   final double tips;
   final double extraAmount;
   final String? extraLabel;
-  final String status; // 'pending' | 'delivered' | 'failed' | 'returned'
+  final String status; // 'pending' | 'delivered' | 'failed' | 'returned' | 'rescheduled' | 'rejected'
   final int sortOrder;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deliveredAt;
   final int attemptCount; // computed field (from attempts table joining or subquery)
   final String? photoPath;
+  final String? deliveryPhotoPath;
+  final String? rideId;
+  final DateTime? rescheduledDate;
+  final String? rejectionReason;
 
   Package({
     required this.id,
@@ -55,6 +59,10 @@ class Package {
     this.deliveredAt,
     this.attemptCount = 0,
     this.photoPath,
+    this.deliveryPhotoPath,
+    this.rideId,
+    this.rescheduledDate,
+    this.rejectionReason,
   });
 
   double get totalCod => codCash + codDigital;
@@ -86,6 +94,10 @@ class Package {
       deliveredAt: map['delivered_at'] != null ? DateTime.parse(map['delivered_at'] as String) : null,
       attemptCount: attempts,
       photoPath: map['photo_path'] as String?,
+      deliveryPhotoPath: map['delivery_photo_path'] as String?,
+      rideId: map['ride_id'] as String?,
+      rescheduledDate: map['rescheduled_date'] != null ? DateTime.parse(map['rescheduled_date'] as String) : null,
+      rejectionReason: map['rejection_reason'] as String?,
     );
   }
 
@@ -114,6 +126,10 @@ class Package {
       'updated_at': updatedAt.toIso8601String(),
       'delivered_at': deliveredAt?.toIso8601String(),
       'photo_path': photoPath,
+      'delivery_photo_path': deliveryPhotoPath,
+      'ride_id': rideId,
+      'rescheduled_date': rescheduledDate?.toIso8601String(),
+      'rejection_reason': rejectionReason,
     };
   }
 
@@ -142,6 +158,10 @@ class Package {
     DateTime? deliveredAt,
     int? attemptCount,
     String? photoPath,
+    String? deliveryPhotoPath,
+    String? rideId,
+    DateTime? rescheduledDate,
+    String? rejectionReason,
   }) {
     return Package(
       id: id ?? this.id,
@@ -168,6 +188,62 @@ class Package {
       deliveredAt: deliveredAt ?? this.deliveredAt,
       attemptCount: attemptCount ?? this.attemptCount,
       photoPath: photoPath ?? this.photoPath,
+      deliveryPhotoPath: deliveryPhotoPath ?? this.deliveryPhotoPath,
+      rideId: rideId ?? this.rideId,
+      rescheduledDate: rescheduledDate ?? this.rescheduledDate,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+    );
+  }
+}
+
+class Ride {
+  final String id;
+  final int rideNumber;
+  final DateTime date;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+
+  Ride({
+    required this.id,
+    required this.rideNumber,
+    required this.date,
+    required this.startedAt,
+    this.endedAt,
+  });
+
+  factory Ride.fromMap(Map<String, dynamic> map) {
+    return Ride(
+      id: map['id'] as String,
+      rideNumber: map['ride_number'] as int,
+      date: DateTime.parse(map['date'] as String),
+      startedAt: DateTime.parse(map['started_at'] as String),
+      endedAt: map['ended_at'] != null ? DateTime.parse(map['ended_at'] as String) : null,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'ride_number': rideNumber,
+      'date': date.toIso8601String().substring(0, 10),
+      'started_at': startedAt.toIso8601String(),
+      'ended_at': endedAt?.toIso8601String(),
+    };
+  }
+
+  Ride copyWith({
+    String? id,
+    int? rideNumber,
+    DateTime? date,
+    DateTime? startedAt,
+    DateTime? endedAt,
+  }) {
+    return Ride(
+      id: id ?? this.id,
+      rideNumber: rideNumber ?? this.rideNumber,
+      date: date ?? this.date,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
     );
   }
 }
@@ -248,7 +324,7 @@ class DbHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 2,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -257,6 +333,25 @@ class DbHelper {
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS rides (
+          id TEXT PRIMARY KEY,
+          ride_number INTEGER NOT NULL,
+          date TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          ended_at TEXT
+        )
+      ''');
+      await db.execute('ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)');
+      await db.execute('ALTER TABLE packages ADD COLUMN rescheduled_date TEXT');
+      await db.execute('ALTER TABLE packages ADD COLUMN rejection_reason TEXT');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
     }
   }
 
@@ -285,7 +380,11 @@ class DbHelper {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         delivered_at TEXT,
-        photo_path TEXT
+        photo_path TEXT,
+        delivery_photo_path TEXT,
+        ride_id TEXT REFERENCES rides(id),
+        rescheduled_date TEXT,
+        rejection_reason TEXT
       )
     ''');
 
@@ -313,6 +412,18 @@ class DbHelper {
     await db.execute('CREATE INDEX idx_packages_status ON packages(status);');
     await db.execute('CREATE INDEX idx_packages_sort_order ON packages(sort_order);');
     await db.execute('CREATE INDEX idx_packages_created_at ON packages(created_at);');
+
+    await db.execute('''
+      CREATE TABLE rides (
+        id TEXT PRIMARY KEY,
+        ride_number INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_rides_date ON rides(date);');
+    await db.execute('CREATE INDEX idx_packages_ride_id ON packages(ride_id);');
   }
 
   // --- CRUD PACKAGES ---
@@ -600,5 +711,237 @@ class DbHelper {
     await db.delete('delivery_attempts');
     await db.delete('packages');
     await db.delete('settings');
+    await db.delete('rides');
+  }
+
+  // --- RIDE HELPER METHODS ---
+
+  Future<int> insertRide(Ride ride) async {
+    final db = await database;
+    return await db.insert('rides', ride.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<int> updateRide(Ride ride) async {
+    final db = await database;
+    return await db.update(
+      'rides',
+      ride.toMap(),
+      where: 'id = ?',
+      whereArgs: [ride.id],
+    );
+  }
+
+  Future<Ride?> getRideById(String id) async {
+    final db = await database;
+    final result = await db.query(
+      'rides',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return Ride.fromMap(result.first);
+    }
+    return null;
+  }
+
+  Future<Ride?> getActiveRide() async {
+    final db = await database;
+    final result = await db.query(
+      'rides',
+      where: 'ended_at IS NULL',
+      orderBy: 'started_at DESC',
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return Ride.fromMap(result.first);
+    }
+    return null;
+  }
+
+  Future<List<Ride>> getRidesForDate(DateTime date) async {
+    final db = await database;
+    final dateStr = date.toIso8601String().substring(0, 10);
+    final result = await db.query(
+      'rides',
+      where: 'date = ?',
+      whereArgs: [dateStr],
+      orderBy: 'ride_number ASC',
+    );
+    return result.map((map) => Ride.fromMap(map)).toList();
+  }
+
+  Future<List<Ride>> getAllRides() async {
+    final db = await database;
+    final result = await db.query('rides', orderBy: 'started_at DESC');
+    return result.map((map) => Ride.fromMap(map)).toList();
+  }
+
+  Future<int> getNextRideNumberForDate(DateTime date) async {
+    final db = await database;
+    final dateStr = date.toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      'SELECT MAX(ride_number) as max_num FROM rides WHERE date = ?',
+      [dateStr],
+    );
+    final maxNum = Sqflite.firstIntValue(result) ?? 0;
+    return maxNum + 1;
+  }
+
+  Future<List<Package>> getPackagesForRide(String rideId) async {
+    final db = await database;
+    final result = await db.query(
+      'packages',
+      where: 'ride_id = ?',
+      orderBy: 'sort_order ASC',
+    );
+    return result.map((map) => Package.fromMap(map)).toList();
+  }
+
+  Future<void> revertExpiredRescheduledPackages() async {
+    final db = await database;
+    final nowStr = DateTime.now().toIso8601String();
+    final today = DateTime.now();
+    final tomorrowStart = DateTime(today.year, today.month, today.day + 1).toIso8601String();
+    await db.update(
+      'packages',
+      {
+        'status': 'pending',
+        'updated_at': nowStr,
+      },
+      where: "status = 'rescheduled' AND rescheduled_date < ?",
+      whereArgs: [tomorrowStart],
+    );
+  }
+
+  Future<List<Package>> getTodayPackages({
+    String? searchQuery,
+    List<String>? statusFilters,
+    List<String>? barangayFilters,
+    List<String>? paymentTypeFilters,
+  }) async {
+    await revertExpiredRescheduledPackages();
+
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    
+    List<String> whereClauses = [];
+    List<dynamic> whereArgs = [];
+
+    whereClauses.add('''
+      (
+        p.status = 'pending' OR
+        p.created_at LIKE ? OR
+        p.delivered_at LIKE ? OR
+        p.ride_id IN (SELECT id FROM rides WHERE date = ?)
+      )
+    ''');
+    whereArgs.addAll(['$todayStr%', '$todayStr%', todayStr]);
+
+    if (searchQuery != null && searchQuery.isNotEmpty) {
+      whereClauses.add('(p.tracking_number LIKE ? OR p.receiver_name LIKE ? OR p.city LIKE ? OR p.barangay LIKE ?)');
+      final term = '%$searchQuery%';
+      whereArgs.addAll([term, term, term, term]);
+    }
+
+    if (statusFilters != null && statusFilters.isNotEmpty) {
+      final placeholders = List.filled(statusFilters.length, '?').join(', ');
+      whereClauses.add('p.status IN ($placeholders)');
+      whereArgs.addAll(statusFilters);
+    }
+
+    if (barangayFilters != null && barangayFilters.isNotEmpty) {
+      final placeholders = List.filled(barangayFilters.length, '?').join(', ');
+      whereClauses.add('p.barangay IN ($placeholders)');
+      whereArgs.addAll(barangayFilters);
+    }
+
+    if (paymentTypeFilters != null && paymentTypeFilters.isNotEmpty) {
+      final placeholders = List.filled(paymentTypeFilters.length, '?').join(', ');
+      whereClauses.add('p.payment_type IN ($placeholders)');
+      whereArgs.addAll(paymentTypeFilters);
+    }
+
+    final whereString = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
+    
+    final sql = '''
+      SELECT p.*, (SELECT COUNT(*) FROM delivery_attempts WHERE package_id = p.id) as attempt_count
+      FROM packages p
+      $whereString
+      ORDER BY p.sort_order ASC, p.created_at DESC
+    ''';
+
+    final result = await db.rawQuery(sql, whereArgs);
+    return result.map((map) {
+      final attempts = map['attempt_count'] as int? ?? 0;
+      return Package.fromMap(map, attempts: attempts);
+    }).toList();
+  }
+
+  Future<List<Package>> getPackagesInDateRange({
+    required DateTime startDate,
+    required DateTime endDate,
+    String? searchQuery,
+    List<String>? statusFilters,
+    List<String>? barangayFilters,
+    List<String>? paymentTypeFilters,
+  }) async {
+    final db = await database;
+    
+    final startStr = "${startDate.toIso8601String().substring(0, 10)} 00:00:00";
+    final endStr = "${endDate.toIso8601String().substring(0, 10)} 23:59:59";
+    
+    List<String> whereClauses = [];
+    List<dynamic> whereArgs = [];
+    
+    whereClauses.add('''
+      (
+        (p.created_at BETWEEN ? AND ?) OR 
+        (p.delivered_at BETWEEN ? AND ?) OR
+        (p.ride_id IN (SELECT id FROM rides WHERE date BETWEEN ? AND ?))
+      )
+    ''');
+    final startDay = startDate.toIso8601String().substring(0, 10);
+    final endDay = endDate.toIso8601String().substring(0, 10);
+    whereArgs.addAll([startStr, endStr, startStr, endStr, startDay, endDay]);
+
+    if (searchQuery != null && searchQuery.isNotEmpty) {
+      whereClauses.add('(p.tracking_number LIKE ? OR p.receiver_name LIKE ? OR p.city LIKE ? OR p.barangay LIKE ?)');
+      final term = '%$searchQuery%';
+      whereArgs.addAll([term, term, term, term]);
+    }
+
+    if (statusFilters != null && statusFilters.isNotEmpty) {
+      final placeholders = List.filled(statusFilters.length, '?').join(', ');
+      whereClauses.add('p.status IN ($placeholders)');
+      whereArgs.addAll(statusFilters);
+    }
+
+    if (barangayFilters != null && barangayFilters.isNotEmpty) {
+      final placeholders = List.filled(barangayFilters.length, '?').join(', ');
+      whereClauses.add('p.barangay IN ($placeholders)');
+      whereArgs.addAll(barangayFilters);
+    }
+
+    if (paymentTypeFilters != null && paymentTypeFilters.isNotEmpty) {
+      final placeholders = List.filled(paymentTypeFilters.length, '?').join(', ');
+      whereClauses.add('p.payment_type IN ($placeholders)');
+      whereArgs.addAll(paymentTypeFilters);
+    }
+
+    final whereString = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
+    
+    final sql = '''
+      SELECT p.*, (SELECT COUNT(*) FROM delivery_attempts WHERE package_id = p.id) as attempt_count
+      FROM packages p
+      $whereString
+      ORDER BY p.sort_order ASC, p.created_at DESC
+    ''';
+
+    final result = await db.rawQuery(sql, whereArgs);
+    return result.map((map) {
+      final attempts = map['attempt_count'] as int? ?? 0;
+      return Package.fromMap(map, attempts: attempts);
+    }).toList();
   }
 }

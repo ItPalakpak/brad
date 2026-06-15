@@ -45,9 +45,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
 
   late TextEditingController _codCashController;
   late TextEditingController _codDigitalController;
-  late TextEditingController _tipsController;
-  late TextEditingController _extraAmountController;
-  late TextEditingController _extraLabelController;
 
   String _paymentType = 'cod_cash';
   double? _lat;
@@ -71,9 +68,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
 
     _codCashController = TextEditingController(text: p?.codCash.toString() ?? '0');
     _codDigitalController = TextEditingController(text: p?.codDigital.toString() ?? '0');
-    _tipsController = TextEditingController(text: p?.tips.toString() ?? '0');
-    _extraAmountController = TextEditingController(text: p?.extraAmount.toString() ?? '0');
-    _extraLabelController = TextEditingController(text: p?.extraLabel ?? '');
 
     _paymentType = p?.paymentType ?? 'cod_cash';
     _lat = p?.lat;
@@ -93,9 +87,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     _cityController.dispose();
     _codCashController.dispose();
     _codDigitalController.dispose();
-    _tipsController.dispose();
-    _extraAmountController.dispose();
-    _extraLabelController.dispose();
     super.dispose();
   }
 
@@ -187,9 +178,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
   double _getGrandTotal() {
     final cash = double.tryParse(_codCashController.text) ?? 0.0;
     final digital = double.tryParse(_codDigitalController.text) ?? 0.0;
-    final tips = double.tryParse(_tipsController.text) ?? 0.0;
-    final extra = double.tryParse(_extraAmountController.text) ?? 0.0;
-    return cash + digital + tips + extra;
+    return cash + digital;
   }
 
   void _save() {
@@ -206,9 +195,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
 
     final codCash = double.tryParse(_codCashController.text) ?? 0.0;
     final codDigital = double.tryParse(_codDigitalController.text) ?? 0.0;
-    final tips = double.tryParse(_tipsController.text) ?? 0.0;
-    final extraAmount = double.tryParse(_extraAmountController.text) ?? 0.0;
-    final extraLabel = _extraLabelController.text.trim();
 
     final p = widget.package;
     final notifier = ref.read(packagesNotifierProvider.notifier);
@@ -230,9 +216,9 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         paymentType: _paymentType,
         codCash: _paymentType == 'prepaid' ? 0.0 : codCash,
         codDigital: _paymentType == 'prepaid' ? 0.0 : codDigital,
-        tips: tips,
-        extraAmount: extraAmount,
-        extraLabel: extraLabel.isEmpty ? null : extraLabel,
+        tips: 0,
+        extraAmount: 0,
+        extraLabel: null,
         status: 'pending',
         sortOrder: 0, // Auto computed in DB helper
         createdAt: DateTime.now(),
@@ -256,9 +242,9 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         paymentType: _paymentType,
         codCash: _paymentType == 'prepaid' ? 0.0 : codCash,
         codDigital: _paymentType == 'prepaid' ? 0.0 : codDigital,
-        tips: tips,
-        extraAmount: extraAmount,
-        extraLabel: extraLabel.isEmpty ? null : extraLabel,
+        tips: p.tips,
+        extraAmount: p.extraAmount,
+        extraLabel: p.extraLabel,
         updatedAt: DateTime.now(),
         photoPath: _photoPath,
       );
@@ -867,58 +853,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
               const SizedBox(height: 12),
             ],
 
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-                    child: TextFormField(
-                      controller: _tipsController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Tips Received (₱)',
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-                    child: TextFormField(
-                      controller: _extraAmountController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Extra Amount (₱)',
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 4,
-                  child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
-                    child: TextFormField(
-                      controller: _extraLabelController,
-                      decoration: const InputDecoration(
-                        labelText: 'Extra Label',
-                        hintText: 'e.g. Parking fee',
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
             const SizedBox(height: 24),
             // Live Recomputed Grand Total
             Container(
@@ -932,7 +866,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'TOTAL COLLECTED AMOUNT',
+                    'COD AMOUNT',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   Text(

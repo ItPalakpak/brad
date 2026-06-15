@@ -30,6 +30,16 @@ class StatusBadge extends StatelessWidget {
         textColor = AppStatusColors.info;
         label = 'Returned';
         break;
+      case 'rescheduled':
+        bgColor = AppStatusColors.warningSoft;
+        textColor = AppStatusColors.warning;
+        label = 'Rescheduled';
+        break;
+      case 'rejected':
+        bgColor = AppStatusColors.errorSoft;
+        textColor = AppStatusColors.error;
+        label = 'Rejected';
+        break;
       case 'pending':
       default:
         bgColor = AppStatusColors.warningSoft;

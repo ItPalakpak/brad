@@ -11,7 +11,7 @@ import '../../shared/widgets/status_badge.dart';
 import '../../shared/widgets/payment_chip.dart';
 import '../../shared/utils/currency_formatter.dart';
 import '../../shared/utils/date_formatter.dart';
-import 'packages_provider.dart';
+import 'delivery_confirmation_modal.dart';
 
 class PackageCard extends ConsumerWidget {
   final Package package;
@@ -41,14 +41,20 @@ class PackageCard extends ConsumerWidget {
                 extentRatio: 0.3,
                 children: [
                   SlidableAction(
-                    onPressed: (context) {
-                      ref.read(packagesNotifierProvider.notifier).markDelivered(package.id);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: AppStatusColors.success,
-                          content: Text('Package #${package.trackingNumber} marked as Delivered!'),
-                        ),
+                    onPressed: (slidableContext) async {
+                      final confirmed = await showDeliveryConfirmationModal(
+                        context: context,
+                        package: package,
+                        ref: ref,
                       );
+                      if (confirmed && slidableContext.mounted) {
+                        ScaffoldMessenger.of(slidableContext).showSnackBar(
+                          SnackBar(
+                            backgroundColor: AppStatusColors.success,
+                            content: Text('Package #${package.trackingNumber} marked as Delivered!'),
+                          ),
+                        );
+                      }
                     },
                     backgroundColor: AppStatusColors.success,
                     foregroundColor: Colors.white,
