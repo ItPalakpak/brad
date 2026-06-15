@@ -778,13 +778,14 @@ class DbHelper {
   }
 
   Future<int> getNextRideNumberForDate(DateTime date) async {
-    final db = await database;
-    final dateStr = date.toIso8601String().substring(0, 10);
-    final result = await db.rawQuery(
-      'SELECT MAX(ride_number) as max_num FROM rides WHERE date = ?',
-      [dateStr],
-    );
-    final maxNum = Sqflite.firstIntValue(result) ?? 0;
+    final rides = await getRidesForDate(date);
+    if (rides.isEmpty) return 1;
+    int maxNum = 0;
+    for (final r in rides) {
+      if (r.rideNumber > maxNum) {
+        maxNum = r.rideNumber;
+      }
+    }
     return maxNum + 1;
   }
 

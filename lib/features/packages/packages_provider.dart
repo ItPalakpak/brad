@@ -130,6 +130,12 @@ class PackagesNotifier extends _$PackagesNotifier {
       final streets = await _dbHelper.getUniqueStreets();
       final zones = await _dbHelper.getUniqueZones();
 
+      final allRides = await _dbHelper.getAllRides();
+      debugPrint('=== ALL RIDES IN DB:');
+      for (final r in allRides) {
+        debugPrint('  Ride id: ${r.id}, num: ${r.rideNumber}, date: ${r.date}, started: ${r.startedAt}, ended: ${r.endedAt}');
+      }
+
       state = state.copyWith(
         packages: list,
         summary: summary,
@@ -251,16 +257,29 @@ class PackagesNotifier extends _$PackagesNotifier {
 
   Future<void> endRide() async {
     final active = state.activeRide;
-    if (active == null) return;
+    if (active == null) {
+      debugPrint('=== END RIDE: activeRide is null');
+      return;
+    }
 
-    final updated = active.copyWith(endedAt: DateTime.now());
-    await _dbHelper.updateRide(updated);
+    try {
+      final now = DateTime.now();
+      final updated = active.copyWith(endedAt: now);
+      final affected = await _dbHelper.updateRide(updated);
+      debugPrint('=== END RIDE: updated ride ${active.id}, rows affected: $affected');
 
-    final ridePackages = await _dbHelper.getPackagesForRide(active.id);
-    for (final pkg in ridePackages) {
-      if (pkg.status == 'pending') {
-        await _dbHelper.updatePackage(pkg.copyWith(rideId: null));
+      final ridePackages = await _dbHelper.getPackagesForRide(active.id);
+      debugPrint('=== END RIDE: found ${ridePackages.length} packages for ride');
+      for (final pkg in ridePackages) {
+        if (pkg.status != 'delivered') {
+          final updatedPkg = pkg.copyWith(rideId: null);
+          await _dbHelper.updatePackage(updatedPkg);
+          debugPrint('=== END RIDE: released package ${pkg.trackingNumber} to unassigned');
+        }
       }
+    } catch (e, stack) {
+      debugPrint('=== END RIDE ERROR: $e');
+      debugPrint('$stack');
     }
 
     await refresh();

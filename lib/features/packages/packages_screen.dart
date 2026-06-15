@@ -439,9 +439,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     ),
                     const SizedBox(width: 8),
                     OffsetShadowButton.elevated(
-                      onPressed: () {
-                        notifier.endRide();
-                        Navigator.pop(context);
+                      onPressed: () async {
+                        await notifier.endRide();
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
                       },
                       backgroundColor: AppStatusColors.error,
                       child: const Text('END RIDE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -969,6 +971,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
 
   Map<String, dynamic> _computeStats(List<Package> pkgs) {
     int total = pkgs.length;
+    double codCashTotal = 0.0;
+    double codDigitalTotal = 0.0;
+    double tipsTotal = 0.0;
     final statusCounts = <String, int>{};
     final barangayCounts = <String, int>{};
 
@@ -976,10 +981,19 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
       statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1;
       final brgy = p.barangay ?? 'Unknown';
       barangayCounts[brgy] = (barangayCounts[brgy] ?? 0) + 1;
+
+      if (p.status == 'delivered') {
+        codCashTotal += p.codCash;
+        codDigitalTotal += p.codDigital;
+        tipsTotal += p.tips;
+      }
     }
 
     return {
       'total': total,
+      'codCash': codCashTotal,
+      'codDigital': codDigitalTotal,
+      'tips': tipsTotal,
       'status': statusCounts,
       'barangay': barangayCounts,
     };
@@ -1087,6 +1101,10 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     required Map<String, dynamic> stats,
   }) {
     final total = stats['total'] as int;
+    final codCash = stats['codCash'] as double;
+    final codDigital = stats['codDigital'] as double;
+    final tips = stats['tips'] as double;
+    final totalCollected = codCash + codDigital + tips;
     final statusCounts = stats['status'] as Map<String, int>;
     final barangayCounts = stats['barangay'] as Map<String, int>;
 
@@ -1114,6 +1132,62 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                 ),
               ),
             ],
+          ),
+          const Divider(height: 20, thickness: 1.5),
+
+          // Financial breakdown row
+          Row(
+            children: [
+              Expanded(
+                child: _buildFinancialStatBox(
+                  tokens: tokens,
+                  label: 'COD CASH',
+                  value: codCash,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildFinancialStatBox(
+                  tokens: tokens,
+                  label: 'COD DIGITAL',
+                  value: codDigital,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildFinancialStatBox(
+                  tokens: tokens,
+                  label: 'TIPS',
+                  value: tips,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: tokens.surface,
+              border: Border.all(color: tokens.border, width: 1.5),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'TOTAL COLLECTED',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                ),
+                Text(
+                  CurrencyFormatter.format(totalCollected),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: tokens.text,
+                    fontFamily: 'JetBrains Mono',
+                  ),
+                ),
+              ],
+            ),
           ),
           const Divider(height: 24, thickness: 1.5),
 
@@ -1193,6 +1267,44 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               }).toList(),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFinancialStatBox({
+    required AppColorTokens tokens,
+    required String label,
+    required double value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.border, width: 1.0),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.bold,
+              color: tokens.textSubtle,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            CurrencyFormatter.format(value),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: tokens.text,
+              fontFamily: 'JetBrains Mono',
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
