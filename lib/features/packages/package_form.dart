@@ -6,6 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+// CHANGED: Import Google ML Kit Text Recognition for OCR scanning
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 import '../../core/database/db_helper.dart';
 import '../../core/theme/app_theme.dart';
@@ -169,9 +171,218 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         setState(() {
           _photoPath = savedFile.path;
         });
+
+        // CHANGED: Automatically run OCR on the captured parcel photo to auto-populate fields
+        await _runOcrOnPhoto(savedFile.path);
       }
     } catch (e) {
       debugPrint('Error taking photo: $e');
+    }
+  }
+
+  // CHANGED: Process the photo with ML Kit Text Recognition to extract details
+  Future<void> _runOcrOnPhoto(String imagePath) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Processing label OCR...'),
+          ],
+        ),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final inputImage = InputImage.fromFilePath(imagePath);
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
+
+      final text = recognizedText.text;
+      if (text.isEmpty) return;
+
+      String? parsedName;
+      String? parsedPhone;
+      double? parsedCodAmount;
+      String? parsedStreet;
+      String? parsedZone;
+      String? parsedBarangay;
+      String? parsedCity;
+
+      // 1. Phone parsing: match (09|\+63|63)\d{9} or \d{4}[- ]\d{3}[- ]\d{4}
+      final phoneRegex = RegExp(r'\b(?:09|\+639|639)\d{9}\b|\b\d{4}[- ]?\d{3}[- ]?\d{4}\b');
+      final phoneMatch = phoneRegex.firstMatch(text);
+      if (phoneMatch != null) {
+        parsedPhone = phoneMatch.group(0)?.replaceAll(RegExp(r'[- ]'), '');
+        // Normalize starting with 639 or +639 to 09
+        if (parsedPhone != null) {
+          if (parsedPhone.startsWith('+639')) {
+            parsedPhone = '09${parsedPhone.substring(4)}';
+          } else if (parsedPhone.startsWith('639')) {
+            parsedPhone = '09${parsedPhone.substring(3)}';
+          }
+        }
+      }
+
+      // 2. COD amount parsing:
+      // Search for keywords COD, Cash on Delivery, Collect, PHP, ₱ followed by numbers
+      final codRegex = RegExp(
+        r'\b(?:cod|collect|collectable|amount|php|₱)\b\s*[:=-]?\s*(?:php|₱)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+        caseSensitive: false,
+      );
+      final codMatches = codRegex.allMatches(text);
+      for (final match in codMatches) {
+        final amtStr = match.group(1)?.replaceAll(',', '');
+        if (amtStr != null) {
+          final parsed = double.tryParse(amtStr);
+          if (parsed != null && parsed > 0) {
+            parsedCodAmount = parsed;
+            break;
+          }
+        }
+      }
+
+      // 3. Name parsing: lines starting with or containing "To:", "Consignee:", "Receiver:", "Name:"
+      final lines = text.split('\n');
+      final namePrefixRegex = RegExp(
+        r'^\s*(?:to|name|consignee|receiver|recipient)\s*[:=-]\s*(.*)$',
+        caseSensitive: false,
+      );
+      for (final line in lines) {
+        final match = namePrefixRegex.firstMatch(line);
+        if (match != null) {
+          final candidate = match.group(1)?.trim();
+          if (candidate != null && candidate.isNotEmpty && candidate.length > 2) {
+            parsedName = candidate;
+            break;
+          }
+        }
+      }
+
+      // 4. Address parsing:
+      // Zone / Purok
+      final zoneRegex = RegExp(r'\b(?:zone|purok|puk|pk)\s*([0-9a-zA-Z\-]+)', caseSensitive: false);
+      final zoneMatch = zoneRegex.firstMatch(text);
+      if (zoneMatch != null) {
+        parsedZone = zoneMatch.group(0)?.trim();
+      }
+
+      // Barangay search: try to match against database or local Claveria barangays list
+      final packagesState = ref.read(packagesNotifierProvider);
+      final dbBarangays = packagesState.uniqueBarangays;
+      const defaultBarangays = [
+        'Ani-e', 'Cabacungan', 'Gumaod', 'Hinaplanan', 'Kalawihon', 'Lanise',
+        'Libertad', 'Madaguing', 'Malagana', 'Minsacopa', 'Patrocinio', 'Plaridel',
+        'Poblacion', 'Punong', 'Rizal', 'Santa Cruz', 'Tamboboan', 'Tipolohon'
+      ];
+      final barangaysToSearch = dbBarangays.isNotEmpty ? dbBarangays : defaultBarangays;
+      for (final b in barangaysToSearch) {
+        if (b.isNotEmpty && text.toLowerCase().contains(b.toLowerCase())) {
+          parsedBarangay = b;
+          break;
+        }
+      }
+
+      // City search
+      final dbCities = packagesState.uniqueCities;
+      final citiesToSearch = dbCities.isNotEmpty ? dbCities : ['Claveria', 'Gingoog', 'Cagayan de Oro'];
+      for (final c in citiesToSearch) {
+        if (c.isNotEmpty && text.toLowerCase().contains(c.toLowerCase())) {
+          parsedCity = c;
+          break;
+        }
+      }
+
+      // Street Address parsing
+      final streetRegex = RegExp(
+        r'.*?\b(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|boulevard|highway|h-way)\b.*',
+        caseSensitive: false,
+      );
+      final streetMatch = streetRegex.firstMatch(text);
+      if (streetMatch != null) {
+        parsedStreet = streetMatch.group(0)?.trim();
+      }
+
+      if (parsedStreet == null || parsedStreet.isEmpty) {
+        for (final line in lines) {
+          final lower = line.toLowerCase();
+          if (lower.contains('address') || lower.contains('ship to') || lower.contains('deliver to')) {
+            parsedStreet = line.replaceAll(
+              RegExp(r'^\s*(?:address|ship to|deliver to)\s*[:=-]\s*', caseSensitive: false),
+              '',
+            ).trim();
+            break;
+          }
+        }
+      }
+
+      // Apply the parsed values to controllers
+      if (mounted) {
+        setState(() {
+          if (parsedName != null && parsedName.isNotEmpty) {
+            _nameController.text = parsedName;
+          }
+          if (parsedPhone != null && parsedPhone.isNotEmpty) {
+            _phoneController.text = parsedPhone;
+          }
+          if (parsedCodAmount != null && parsedCodAmount > 0) {
+            _paymentType = 'cod_cash';
+            _codCashController.text = parsedCodAmount.toStringAsFixed(2);
+            _codDigitalController.text = '0';
+          } else {
+            _paymentType = 'prepaid';
+            _codCashController.text = '0';
+            _codDigitalController.text = '0';
+          }
+          if (parsedStreet != null && parsedStreet.isNotEmpty) {
+            var cleanStreet = parsedStreet;
+            if (parsedBarangay != null && parsedBarangay.isNotEmpty) {
+              cleanStreet = cleanStreet.replaceAll(RegExp(parsedBarangay, caseSensitive: false), '');
+            }
+            if (parsedCity != null && parsedCity.isNotEmpty) {
+              cleanStreet = cleanStreet.replaceAll(RegExp(parsedCity, caseSensitive: false), '');
+            }
+            cleanStreet = cleanStreet.replaceAll(RegExp(r'^[,\s\-]+|[,\s\-]+$'), '').trim();
+            if (cleanStreet.isNotEmpty) {
+              _streetController.text = cleanStreet;
+            }
+          }
+          if (parsedZone != null && parsedZone.isNotEmpty) {
+            _zoneController.text = parsedZone;
+          }
+          if (parsedBarangay != null && parsedBarangay.isNotEmpty) {
+            _barangayController.text = parsedBarangay;
+          }
+          if (parsedCity != null && parsedCity.isNotEmpty) {
+            _cityController.text = parsedCity;
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Form auto-populated from scanned label details.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error during OCR processing: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to process label OCR: $e'),
+            backgroundColor: AppStatusColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -265,6 +476,64 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // CHANGED: Moved Parcel Photo section to the top of the form layout
+            // Parcel Photo Section
+            Text(
+              'PARCEL PHOTO',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: tokens.surfaceAlt,
+                border: Border.all(color: tokens.border, width: 1.5),
+                borderRadius: BorderRadius.zero,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: tokens.border, width: 1.5),
+                      color: tokens.surface,
+                    ),
+                    child: _photoPath != null && File(_photoPath!).existsSync()
+                        ? Image.file(
+                            File(_photoPath!),
+                            fit: BoxFit.cover,
+                          )
+                        : Icon(Icons.camera_alt_outlined, color: tokens.textSubtle),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _photoPath != null ? 'Parcel Photo Captured' : 'No Photo Captured',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _photoPath != null ? 'Saved locally' : 'Take a photo of the parcel',
+                          style: TextStyle(fontSize: 11, color: tokens.textSubtle),
+                        ),
+                      ],
+                    ),
+                  ),
+                  OffsetShadowButton.icon(
+                    variant: OffsetButtonVariant.outlined,
+                    onPressed: _takePhoto,
+                    icon: Icon(_photoPath != null ? Icons.cached_rounded : Icons.camera_alt_rounded),
+                    label: Text(_photoPath != null ? 'RETAKE' : 'TAKE PHOTO'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // Package Basic Info Section
             Text(
               'PACKAGE DETAILS',
@@ -320,63 +589,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
                   labelText: 'Delivery Notes / Landmark',
                   hintText: 'e.g. Leave with security guard',
                 ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Parcel Photo Section
-            Text(
-              'PARCEL PHOTO',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tokens.textSubtle, letterSpacing: 0.5),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: tokens.surfaceAlt,
-                border: Border.all(color: tokens.border, width: 1.5),
-                borderRadius: BorderRadius.zero,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: tokens.border, width: 1.5),
-                      color: tokens.surface,
-                    ),
-                    child: _photoPath != null && File(_photoPath!).existsSync()
-                        ? Image.file(
-                            File(_photoPath!),
-                            fit: BoxFit.cover,
-                          )
-                        : Icon(Icons.camera_alt_outlined, color: tokens.textSubtle),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _photoPath != null ? 'Parcel Photo Captured' : 'No Photo Captured',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _photoPath != null ? 'Saved locally' : 'Take a photo of the parcel',
-                          style: TextStyle(fontSize: 11, color: tokens.textSubtle),
-                        ),
-                      ],
-                    ),
-                  ),
-                  OffsetShadowButton.icon(
-                    variant: OffsetButtonVariant.outlined,
-                    onPressed: _takePhoto,
-                    icon: Icon(_photoPath != null ? Icons.cached_rounded : Icons.camera_alt_rounded),
-                    label: Text(_photoPath != null ? 'RETAKE' : 'TAKE PHOTO'),
-                  ),
-                ],
               ),
             ),
             const SizedBox(height: 24),

@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- CHANGED: Added camera and photo library usage descriptions for OCR scanning -->
+	<key>NSCameraUsageDescription</key>
+	<string>We need camera access to scan text from photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need photo library access to pick images for text scanning.</string>
 </dict>
 </plist>
