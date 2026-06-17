@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
@@ -14,7 +15,6 @@ import '../packages/packages_provider.dart';
 import 'theme_picker.dart';
 import 'offline_map_settings.dart';
 import '../timer/timer_overlay.dart';
-
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -32,7 +32,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void initState() {
     super.initState();
     final prefs = ref.read(sharedPreferencesProvider);
-    _nameController = TextEditingController(text: prefs.getString('rider_name') ?? 'Rider');
+    _nameController = TextEditingController(
+      text: prefs.getString('rider_name') ?? 'Rider',
+    );
     _proximityRadius = prefs.getDouble('proximity_radius') ?? 500.0;
     _isShiftActive = prefs.getBool('is_shift_active') ?? true;
   }
@@ -58,8 +60,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(geofenceManagerProvider).setAlertRadius(val);
   }
 
-
-
   Future<void> _toggleShift(bool active) async {
     final prefs = ref.read(sharedPreferencesProvider);
     await prefs.setBool('is_shift_active', active);
@@ -68,11 +68,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
     // Sync geofences state
     ref.read(geofenceManagerProvider).setShiftActive(active);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(active ? 'Shift Started — Location monitoring active.' : 'Shift Ended — Location monitoring paused to save battery.'),
+          content: Text(
+            active
+                ? 'Shift Started — Location monitoring active.'
+                : 'Shift Ended — Location monitoring paused to save battery.',
+          ),
         ),
       );
     }
@@ -130,13 +134,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
                 ),
-                
+
                 // Profile Section
                 OffsetShadowCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionHeader(title: 'RIDER PROFILE', icon: Icons.person_outline_rounded),
+                      const SectionHeader(
+                        title: 'RIDER PROFILE',
+                        icon: Icons.person_outline_rounded,
+                      ),
                       const SizedBox(height: 16),
                       Container(
                         decoration: BoxDecoration(
@@ -161,7 +168,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionHeader(title: 'SHIFT CONTROL', icon: Icons.alarm_rounded),
+                      const SectionHeader(
+                        title: 'SHIFT CONTROL',
+                        icon: Icons.alarm_rounded,
+                      ),
                       const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -171,12 +181,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             children: [
                               Text(
                                 _isShiftActive ? 'ACTIVE SHIFT' : 'SHIFT OFF',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                _isShiftActive ? 'GPS alerts running' : 'GPS paused to save battery',
-                                style: TextStyle(fontSize: 11, color: tokens.textSubtle),
+                                _isShiftActive
+                                    ? 'GPS alerts running'
+                                    : 'GPS paused to save battery',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: tokens.textSubtle,
+                                ),
                               ),
                             ],
                           ),
@@ -189,11 +207,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                       const SizedBox(height: 12),
                       OffsetShadowButton.elevated(
-                        backgroundColor: _isShiftActive ? AppStatusColors.error : AppStatusColors.success,
+                        backgroundColor: _isShiftActive
+                            ? AppStatusColors.error
+                            : AppStatusColors.success,
                         foregroundColor: Colors.white,
                         fullWidth: true,
                         onPressed: () => _toggleShift(!_isShiftActive),
-                        child: Text(_isShiftActive ? 'END SHIFT' : 'START SHIFT'),
+                        child: Text(
+                          _isShiftActive ? 'END SHIFT' : 'START SHIFT',
+                        ),
                       ),
                     ],
                   ),
@@ -205,7 +227,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionHeader(title: 'APPEARANCE', icon: Icons.palette_outlined),
+                      const SectionHeader(
+                        title: 'APPEARANCE',
+                        icon: Icons.palette_outlined,
+                      ),
                       const SizedBox(height: 16),
                       const ThemePicker(),
                     ],
@@ -218,15 +243,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionHeader(title: 'PROXIMITY ALARMS', icon: Icons.notification_important_outlined),
+                      const SectionHeader(
+                        title: 'PROXIMITY ALARMS',
+                        icon: Icons.notification_important_outlined,
+                      ),
                       const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Alert Radius', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const Text(
+                            'Alert Radius',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                           Text(
                             '${_proximityRadius.toInt()} meters',
-                            style: const TextStyle(fontFamily: 'JetBrains Mono', fontWeight: FontWeight.bold, fontSize: 13),
+                            style: const TextStyle(
+                              fontFamily: 'JetBrains Mono',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
                           ),
                         ],
                       ),
@@ -253,12 +291,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionHeader(title: 'TIMER WIDGET', icon: Icons.timer_outlined),
+                      const SectionHeader(
+                        title: 'TIMER WIDGET',
+                        icon: Icons.timer_outlined,
+                      ),
                       const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Full-Screen Shift Timers', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const Text(
+                            'Full-Screen Shift Timers',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                           OffsetShadowButton.elevated(
                             onPressed: () {
                               TimerOverlayManager.instance.show(context, ref);
@@ -277,13 +324,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionHeader(title: 'DATA MANAGEMENT', icon: Icons.backup_outlined),
+                      const SectionHeader(
+                        title: 'DATA MANAGEMENT',
+                        icon: Icons.backup_outlined,
+                      ),
                       const SizedBox(height: 16),
                       OffsetShadowButton.icon(
                         fullWidth: true,
                         onPressed: () async {
                           try {
-                            await ref.read(packagesNotifierProvider.notifier).shareXlsx();
+                            await ref
+                                .read(packagesNotifierProvider.notifier)
+                                .shareXlsx();
                           } catch (e) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -294,6 +346,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         },
                         icon: const Icon(Icons.share_rounded),
                         label: const Text('EXPORT SHIFT DATA (XLSX)'),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // CHANGED: Added 'RESTORE FROM SQL BACKUP' button to allow riders to restore historical/cleared data from locally saved SQL files
+                      OffsetShadowButton.icon(
+                        variant: OffsetButtonVariant.outlined,
+                        fullWidth: true,
+                        foregroundColor: tokens.accent,
+                        borderColor: tokens.border,
+                        onPressed: () => _showRestoreBackupDialog(context),
+                        icon: const Icon(Icons.settings_backup_restore_rounded),
+                        label: const Text('RESTORE FROM SQL BACKUP'),
                       ),
                       const SizedBox(height: 12),
                       OffsetShadowButton.icon(
@@ -312,15 +376,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 shadowColor: tokens.border,
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     const Text(
-                                      'Clear Delivered Packages?',
-                                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                                      'Clear Package Data?',
+                                      style: TextStyle(
+                                        fontFamily: 'Geist',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
                                     ),
                                     const SizedBox(height: 12),
                                     const Text(
-                                      'This will automatically back up all shift data to an Excel file and then delete all packages with a status of "delivered" from the database.',
+                                      'This will automatically back up all shift data to an Excel file and then delete all packages with a status of "delivered", "failed", "returned", or "rejected" from the database.',
                                       style: TextStyle(fontSize: 13),
                                     ),
                                     const SizedBox(height: 20),
@@ -328,15 +397,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         TextButton(
-                                          onPressed: () => Navigator.pop(context, false),
+                                          onPressed: () =>
+                                              Navigator.pop(context, false),
                                           child: const Text('CANCEL'),
                                         ),
                                         const SizedBox(width: 8),
                                         OffsetShadowButton.elevated(
-                                          backgroundColor: AppStatusColors.error,
+                                          backgroundColor:
+                                              AppStatusColors.error,
                                           foregroundColor: Colors.white,
-                                          onPressed: () => Navigator.pop(context, true),
-                                          child: const Text('CLEAR DELIVERED'),
+                                          onPressed: () =>
+                                              Navigator.pop(context, true),
+                                          child: const Text(
+                                            'CLEAR PACKAGES',
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -347,16 +421,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           );
 
                           if (confirmed == true) {
-                            await ref.read(packagesNotifierProvider.notifier).clearDelivered();
+                            await ref
+                                .read(packagesNotifierProvider.notifier)
+                                .clearDelivered();
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Delivered packages backed up and cleared.')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Delivered and failed packages backed up and cleared.',
+                                  ),
+                                ),
                               );
                             }
                           }
                         },
                         icon: const Icon(Icons.delete_sweep_outlined),
-                        label: const Text('CLEAR DELIVERED PACKAGES'),
+                        label: const Text('CLEAR PACKAGE DATA'),
                       ),
                     ],
                   ),
@@ -367,6 +447,197 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // CHANGED: Added _showRestoreBackupDialog method to display list of available SQL backups and prompt for restoration
+  void _showRestoreBackupDialog(BuildContext context) async {
+    final notifier = ref.read(packagesNotifierProvider.notifier);
+    final backups = await notifier.listSqlBackups();
+
+    if (!context.mounted) return;
+    final tokens = context.tokens;
+
+    showDialog(
+      context: context,
+      builder: (outerContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: OffsetShadowCard(
+            backgroundColor: tokens.surface,
+            shadowColor: tokens.border,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Restore from SQL Backup',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (backups.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24.0),
+                    child: Text(
+                      'No SQL backups found.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(outerContext).size.height * 0.4,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: backups.length,
+                      itemBuilder: (listContext, index) {
+                        final file = backups[index];
+                        final filename = file.path
+                            .split('/')
+                            .last
+                            .split('\\')
+                            .last;
+                        String displayDate = filename;
+                        try {
+                          final datePart = filename
+                              .replaceAll('BRAD_backup_', '')
+                              .replaceAll('.sql', '');
+                          final year = int.parse(datePart.substring(0, 4));
+                          final month = int.parse(datePart.substring(4, 6));
+                          final day = int.parse(datePart.substring(6, 8));
+                          final hour = int.parse(datePart.substring(9, 11));
+                          final minute = int.parse(datePart.substring(11, 13));
+                          final dt = DateTime(year, month, day, hour, minute);
+                          displayDate = DateFormat(
+                            'MMMM dd, yyyy - hh:mm a',
+                          ).format(dt);
+                        } catch (_) {}
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            displayDate,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          subtitle: Text(
+                            filename,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: tokens.textSubtle,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.restore_rounded,
+                            color: tokens.accent,
+                          ),
+                          onTap: () async {
+                            final confirm = await showDialog<bool>(
+                              context: outerContext,
+                              builder: (dialogContext) => Dialog(
+                                backgroundColor: Colors.transparent,
+                                elevation: 0,
+                                child: OffsetShadowCard(
+                                  backgroundColor: tokens.surface,
+                                  shadowColor: tokens.border,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const Text(
+                                        'Confirm Restore?',
+                                        style: TextStyle(
+                                          fontFamily: 'Geist',
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'Are you sure you want to restore all data from this backup? Existing records with matching IDs will be updated.',
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(
+                                              dialogContext,
+                                              false,
+                                            ),
+                                            child: const Text('CANCEL'),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          OffsetShadowButton.elevated(
+                                            backgroundColor: tokens.accent,
+                                            onPressed: () => Navigator.pop(
+                                              dialogContext,
+                                              true,
+                                            ),
+                                            child: const Text(
+                                              'RESTORE',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              if (!outerContext.mounted) return;
+                              Navigator.pop(outerContext);
+                              await notifier.restoreFromSqlBackup(file);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Backup restored successfully!',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(outerContext),
+                      child: Text(
+                        'Close',
+                        style: TextStyle(color: tokens.textSubtle),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

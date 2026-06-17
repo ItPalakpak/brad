@@ -722,7 +722,9 @@ class DbHelper {
 
   Future<PaymentSummary> getPaymentSummary() async {
     final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
     // Compute total Cash and total Digital and total Tips from packages where status = 'delivered'
+    // CHANGED: Scoped payment summary to today's packages only to prevent showing historical totals on the packages screen
     final result = await db.rawQuery('''
       SELECT 
         SUM(cod_cash) as total_cash, 
@@ -730,8 +732,12 @@ class DbHelper {
         SUM(tips) as total_tips,
         SUM(extra_amount) as total_extra
       FROM packages 
-      WHERE status = 'delivered'
-    ''');
+      WHERE status = 'delivered' AND (
+        created_at LIKE ? OR
+        delivered_at LIKE ? OR
+        ride_id IN (SELECT id FROM rides WHERE date = ?)
+      )
+    ''', ['$todayStr%', '$todayStr%', todayStr]);
     
     if (result.isNotEmpty && result.first['total_cash'] != null) {
       return PaymentSummary(
@@ -744,16 +750,46 @@ class DbHelper {
     return PaymentSummary.empty();
   }
 
+  // CHANGED: Added helper to fetch the earliest work date from packages and rides tables to determine first day of work
+  Future<DateTime> getEarliestWorkDate() async {
+    final db = await database;
+    final pkgResult = await db.rawQuery('SELECT MIN(created_at) as min_date FROM packages');
+    final rideResult = await db.rawQuery('SELECT MIN(started_at) as min_date FROM rides');
+    
+    DateTime? earliestPkg;
+    if (pkgResult.isNotEmpty && pkgResult.first['min_date'] != null) {
+      earliestPkg = DateTime.tryParse(pkgResult.first['min_date'] as String);
+    }
+    
+    DateTime? earliestRide;
+    if (rideResult.isNotEmpty && rideResult.first['min_date'] != null) {
+      earliestRide = DateTime.tryParse(rideResult.first['min_date'] as String);
+    }
+    
+    DateTime earliest = DateTime.now();
+    if (earliestPkg != null && earliestPkg.isBefore(earliest)) {
+      earliest = earliestPkg;
+    }
+    if (earliestRide != null && earliestRide.isBefore(earliest)) {
+      earliest = earliestRide;
+    }
+    
+    return DateTime(earliest.year, earliest.month, earliest.day);
+  }
+
   Future<void> clearDeliveredPackages() async {
     final db = await database;
     await db.transaction((txn) async {
-      // Delete attempts for delivered packages first to be safe (cascade should handle it, but let's be explicit)
+      // Delete attempts for delivered and failed packages first to be safe (cascade should handle it, but let's be explicit)
       await txn.rawDelete('''
         DELETE FROM delivery_attempts 
-        WHERE package_id IN (SELECT id FROM packages WHERE status = 'delivered')
+        WHERE package_id IN (SELECT id FROM packages WHERE status IN ('delivered', 'failed', 'returned', 'rejected'))
       ''');
-      // Delete delivered packages
-      await txn.delete('packages', where: "status = 'delivered'");
+      // Delete delivered and failed packages
+      await txn.delete(
+        'packages',
+        where: "status IN ('delivered', 'failed', 'returned', 'rejected')",
+      );
     });
   }
 
@@ -763,6 +799,164 @@ class DbHelper {
     await db.delete('packages');
     await db.delete('settings');
     await db.delete('rides');
+  }
+
+  // CHANGED: Added seedTestData to seed database with packages across multiple dates and rides (including today's ride) for verification
+  Future<void> seedTestData() async {
+    final now = DateTime.now();
+    
+    // 1. Create a ride for today
+    final todayRideId = 'ride_today_${now.millisecondsSinceEpoch}';
+    await insertRide(Ride(
+      id: todayRideId,
+      rideNumber: 1,
+      date: now,
+      startedAt: now.subtract(const Duration(hours: 3)),
+    ));
+    
+    // 2. Create some packages for today's ride (some delivered, some pending)
+    await insertPackage(Package(
+      id: 'pkg_t1_${now.millisecondsSinceEpoch}',
+      trackingNumber: 'TRK-TODAY-DEL-${now.millisecondsSinceEpoch}',
+      receiverName: 'Juan Dela Cruz',
+      receiverPhone: '09171234567',
+      street: '123 Rizal St',
+      zone: 'Zone 1',
+      barangay: 'Brgy 1',
+      city: 'Manila',
+      paymentType: 'cod_cash',
+      codCash: 1250.0,
+      codDigital: 0.0,
+      tips: 50.0,
+      extraAmount: 0.0,
+      status: 'delivered',
+      sortOrder: 0,
+      createdAt: now.subtract(const Duration(hours: 2)),
+      updatedAt: now.subtract(const Duration(hours: 1)),
+      deliveredAt: now.subtract(const Duration(hours: 1)),
+      rideId: todayRideId,
+    ));
+
+    await insertPackage(Package(
+      id: 'pkg_t2_${now.millisecondsSinceEpoch}',
+      trackingNumber: 'TRK-TODAY-PEND1-${now.millisecondsSinceEpoch}',
+      receiverName: 'Maria Santos',
+      receiverPhone: '09187654321',
+      street: '456 Bonifacio St',
+      zone: 'Zone 2',
+      barangay: 'Brgy 2',
+      city: 'Manila',
+      paymentType: 'cod_digital',
+      codCash: 0.0,
+      codDigital: 850.0,
+      tips: 0.0,
+      extraAmount: 15.0,
+      extraLabel: 'Fragile handling',
+      status: 'pending',
+      sortOrder: 1,
+      createdAt: now.subtract(const Duration(hours: 2)),
+      updatedAt: now.subtract(const Duration(hours: 2)),
+      rideId: todayRideId,
+    ));
+
+    // 3. Create another ride today (completed)
+    final todayCompletedRideId = 'ride_today_comp_${now.millisecondsSinceEpoch}';
+    await insertRide(Ride(
+      id: todayCompletedRideId,
+      rideNumber: 2,
+      date: now,
+      startedAt: now.subtract(const Duration(hours: 6)),
+      endedAt: now.subtract(const Duration(hours: 4)),
+    ));
+
+    await insertPackage(Package(
+      id: 'pkg_t3_${now.millisecondsSinceEpoch}',
+      trackingNumber: 'TRK-TODAY-DEL2-${now.millisecondsSinceEpoch}',
+      receiverName: 'Pedro Penduko',
+      receiverPhone: '09192223333',
+      street: '789 Mabini St',
+      zone: 'Zone 3',
+      barangay: 'Brgy 3',
+      city: 'Manila',
+      paymentType: 'prepaid',
+      codCash: 0.0,
+      codDigital: 0.0,
+      tips: 20.0,
+      extraAmount: 0.0,
+      status: 'delivered',
+      sortOrder: 0,
+      createdAt: now.subtract(const Duration(hours: 5)),
+      updatedAt: now.subtract(const Duration(hours: 4)),
+      deliveredAt: now.subtract(const Duration(hours: 4)),
+      rideId: todayCompletedRideId,
+    ));
+
+    // 4. Create historical rides (from yesterday, 2 days ago, and 5 days ago)
+    final dates = [
+      now.subtract(const Duration(days: 1)),
+      now.subtract(const Duration(days: 2)),
+      now.subtract(const Duration(days: 5)),
+    ];
+    
+    int index = 1;
+    for (final date in dates) {
+      final rideId = 'ride_hist_${index}_${now.millisecondsSinceEpoch}';
+      
+      await insertRide(Ride(
+        id: rideId,
+        rideNumber: 1,
+        date: date,
+        startedAt: date.add(const Duration(hours: 9)), // 9:00 AM
+        endedAt: date.add(const Duration(hours: 12)), // 12:00 PM
+      ));
+      
+      // Seed a delivered package for this historical ride
+      await insertPackage(Package(
+        id: 'pkg_hist_del_${index}_${now.millisecondsSinceEpoch}',
+        trackingNumber: 'TRK-HIST-DEL-$index-${now.millisecondsSinceEpoch}',
+        receiverName: 'Customer Historical $index',
+        receiverPhone: '0915999999$index',
+        street: 'Street $index',
+        zone: 'Zone $index',
+        barangay: 'Barangay $index',
+        city: 'Quezon City',
+        paymentType: 'cod_cash',
+        codCash: 500.0 + (index * 100),
+        codDigital: 0.0,
+        tips: 10.0 * index,
+        extraAmount: 0.0,
+        status: 'delivered',
+        sortOrder: 0,
+        createdAt: date.add(const Duration(hours: 8)),
+        updatedAt: date.add(const Duration(hours: 11)),
+        deliveredAt: date.add(const Duration(hours: 11)),
+        rideId: rideId,
+      ));
+
+      // Seed a failed/returned package for this historical ride
+      await insertPackage(Package(
+        id: 'pkg_hist_fail_${index}_${now.millisecondsSinceEpoch}',
+        trackingNumber: 'TRK-HIST-FAIL-$index-${now.millisecondsSinceEpoch}',
+        receiverName: 'Failed Customer $index',
+        receiverPhone: '0915888888$index',
+        street: 'Street Fail $index',
+        zone: 'Zone $index',
+        barangay: 'Barangay $index',
+        city: 'Quezon City',
+        paymentType: 'cod_cash',
+        codCash: 300.0,
+        codDigital: 0.0,
+        tips: 0.0,
+        extraAmount: 0.0,
+        status: 'failed',
+        sortOrder: 1,
+        createdAt: date.add(const Duration(hours: 8)),
+        updatedAt: date.add(const Duration(hours: 11)),
+        rideId: rideId,
+      ));
+      
+      index++;
+    }
   }
 
   // --- RIDE HELPER METHODS ---
@@ -996,5 +1190,122 @@ class DbHelper {
       final attempts = map['attempt_count'] as int? ?? 0;
       return Package.fromMap(map, attempts: attempts);
     }).toList();
+  }
+
+  // CHANGED: Added helper to export all delivered and failed packages, their referenced rides, and delivery attempts as SQL INSERT statements
+  Future<String> exportDeliveredPackagesToSql() async {
+    final db = await database;
+    
+    final packages = await db.query(
+      'packages',
+      where: "status IN ('delivered', 'failed', 'returned', 'rejected')",
+    );
+    if (packages.isEmpty) {
+      return '';
+    }
+    
+    final List<String> sqlStatements = [];
+    sqlStatements.add('-- BRAD SQL Backup Generated on ${DateTime.now().toIso8601String()}');
+    
+    // 1. Get all unique ride IDs referenced by these packages
+    final rideIds = packages
+        .map((p) => p['ride_id'])
+        .where((id) => id != null)
+        .cast<String>()
+        .toSet()
+        .toList();
+        
+    if (rideIds.isNotEmpty) {
+      sqlStatements.add('-- RIDES');
+      final placeholders = List.filled(rideIds.length, '?').join(', ');
+      final rides = await db.query('rides', where: 'id IN ($placeholders)', whereArgs: rideIds);
+      for (final r in rides) {
+        final id = _sqlEscape(r['id']);
+        final numVal = r['ride_number'];
+        final date = _sqlEscape(r['date']);
+        final started = _sqlEscape(r['started_at']);
+        final ended = _sqlEscape(r['ended_at']);
+        sqlStatements.add(
+          "INSERT OR REPLACE INTO rides (id, ride_number, date, started_at, ended_at) VALUES ($id, $numVal, $date, $started, $ended);"
+        );
+      }
+    }
+    
+    // 2. Get packages SQL
+    sqlStatements.add('-- PACKAGES');
+    for (final p in packages) {
+      final id = _sqlEscape(p['id']);
+      final trk = _sqlEscape(p['tracking_number']);
+      final name = _sqlEscape(p['receiver_name']);
+      final phone = _sqlEscape(p['receiver_phone']);
+      final notes = _sqlEscape(p['notes']);
+      final lat = p['lat'] ?? 'NULL';
+      final lng = p['lng'] ?? 'NULL';
+      final street = _sqlEscape(p['street']);
+      final zone = _sqlEscape(p['zone']);
+      final barangay = _sqlEscape(p['barangay']);
+      final city = _sqlEscape(p['city']);
+      final ptype = _sqlEscape(p['payment_type']);
+      final codCash = p['cod_cash'] ?? 0.0;
+      final codDigital = p['cod_digital'] ?? 0.0;
+      final tips = p['tips'] ?? 0.0;
+      final extraAmt = p['extra_amount'] ?? 0.0;
+      final extraLbl = _sqlEscape(p['extra_label']);
+      final status = _sqlEscape(p['status']);
+      final sortOrder = p['sort_order'] ?? 0;
+      final created = _sqlEscape(p['created_at']);
+      final updated = _sqlEscape(p['updated_at']);
+      final delivered = _sqlEscape(p['delivered_at']);
+      final photo = _sqlEscape(p['photo_path']);
+      final delPhoto = _sqlEscape(p['delivery_photo_path']);
+      final rideId = _sqlEscape(p['ride_id']);
+      final resched = _sqlEscape(p['rescheduled_date']);
+      final reject = _sqlEscape(p['rejection_reason']);
+      
+      sqlStatements.add(
+        "INSERT OR REPLACE INTO packages (id, tracking_number, receiver_name, receiver_phone, notes, lat, lng, street, zone, barangay, city, payment_type, cod_cash, cod_digital, tips, extra_amount, extra_label, status, sort_order, created_at, updated_at, delivered_at, photo_path, delivery_photo_path, ride_id, rescheduled_date, rejection_reason) VALUES ($id, $trk, $name, $phone, $notes, $lat, $lng, $street, $zone, $barangay, $city, $ptype, $codCash, $codDigital, $tips, $extraAmt, $extraLbl, $status, $sortOrder, $created, $updated, $delivered, $photo, $delPhoto, $rideId, $resched, $reject);"
+      );
+    }
+    
+    // 3. Get all delivery attempts for these packages
+    final packageIds = packages.map((p) => p['id'] as String).toList();
+    if (packageIds.isNotEmpty) {
+      sqlStatements.add('-- DELIVERY_ATTEMPTS');
+      final placeholders = List.filled(packageIds.length, '?').join(', ');
+      final attempts = await db.query('delivery_attempts', where: 'package_id IN ($placeholders)', whereArgs: packageIds);
+      for (final a in attempts) {
+        final id = a['id'];
+        final pkgId = _sqlEscape(a['package_id']);
+        final attemptStatus = _sqlEscape(a['status']);
+        final notes = _sqlEscape(a['notes']);
+        final attemptedAt = _sqlEscape(a['attempted_at']);
+        sqlStatements.add(
+          "INSERT OR REPLACE INTO delivery_attempts (id, package_id, status, notes, attempted_at) VALUES ($id, $pkgId, $attemptStatus, $notes, $attemptedAt);"
+        );
+      }
+    }
+    
+    return sqlStatements.join('\n');
+  }
+
+  String _sqlEscape(dynamic value) {
+    if (value == null) return 'NULL';
+    final str = value.toString().replaceAll("'", "''");
+    return "'$str'";
+  }
+
+  // CHANGED: Added executeSqlScript method to execute raw SQL insert statements from restored backup files
+  Future<void> executeSqlScript(String script) async {
+    final db = await database;
+    final lines = script.split('\n');
+    await db.transaction((txn) async {
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty || trimmed.startsWith('--')) continue;
+        if (trimmed.toUpperCase().startsWith('INSERT ')) {
+          await txn.execute(trimmed);
+        }
+      }
+    });
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/scan/scan_screen.dart';
 import '../features/packages/packages_screen.dart';
 import '../features/packages/package_detail_screen.dart';
@@ -84,147 +85,176 @@ final appRouter = GoRouter(
   ],
 );
 
-class MainNavigationShell extends StatelessWidget {
+// CHANGED: Added showNavBarProvider to coordinate hiding/showing the bottom navigation bar based on scrolling actions
+final showNavBarProvider = StateProvider<bool>((ref) => true);
+
+class MainNavigationShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   const MainNavigationShell({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final tokens = context.tokens;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final showNavBar = ref.watch(showNavBarProvider);
 
     return Scaffold(
       body: navigationShell,
-      bottomNavigationBar: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topCenter,
-        children: [
-          // Background Bar
-          Container(
-            height: 60 + bottomPadding,
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              border: Border(
-                top: BorderSide(color: tokens.border, width: 1.5),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -3),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.only(
-              bottom: bottomPadding,
-            ),
-            child: Row(
+      bottomNavigationBar: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        height: showNavBar ? (60.0 + bottomPadding) : 0.0,
+        child: OverflowBox(
+          minHeight: 0.0,
+          maxHeight: 60.0 + bottomPadding,
+          alignment: Alignment.topCenter,
+          child: AnimatedSlide(
+            offset: showNavBar ? Offset.zero : const Offset(0, 1.0),
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
               children: [
-                // Left Tabs: Packages & Map
-                Expanded(
+                // Background Bar
+                Container(
+                  height: 60 + bottomPadding,
+                  decoration: BoxDecoration(
+                    color: tokens.surface,
+                    border: Border(
+                      top: BorderSide(color: tokens.border, width: 1.5),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -3),
+                      ),
+                    ],
+                  ),
+                  padding: EdgeInsets.only(
+                    bottom: bottomPadding,
+                  ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
+                      // Left Tabs: Packages & Map
                       Expanded(
-                        child: _buildNavItem(
-                          context,
-                          0,
-                          Icons.inventory_2_outlined,
-                          'Packages',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Expanded(
+                              child: _buildNavItem(
+                                context,
+                                ref,
+                                0,
+                                Icons.inventory_2_outlined,
+                                'Packages',
+                              ),
+                            ),
+                            Expanded(
+                              child: _buildNavItem(
+                                context,
+                                ref,
+                                1,
+                                Icons.map_outlined,
+                                'Map',
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      // Gap for Center Button
+                      const SizedBox(width: 72),
+                      // Right Tabs: History & Settings
                       Expanded(
-                        child: _buildNavItem(
-                          context,
-                          1,
-                          Icons.map_outlined,
-                          'Map',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Expanded(
+                              child: _buildNavItem(
+                                context,
+                                ref,
+                                3,
+                                Icons.history_outlined,
+                                'History',
+                              ),
+                            ),
+                            Expanded(
+                              child: _buildNavItem(
+                                context,
+                                ref,
+                                4,
+                                Icons.settings_outlined,
+                                'Settings',
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                // Gap for Center Button
-                const SizedBox(width: 72),
-                // Right Tabs: History & Settings
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Expanded(
-                        child: _buildNavItem(
-                          context,
-                          3,
-                          Icons.history_outlined,
-                          'History',
+                // Floating Center Scan Button (In-line)
+                Positioned(
+                  top: -10, // Positioned in the middle of the 60px active bar height
+                  child: GestureDetector(
+                    onTap: () {
+                      ref.read(showNavBarProvider.notifier).state = true;
+                      navigationShell.goBranch(2);
+                    },
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: navigationShell.currentIndex == 2
+                            ? tokens.accent
+                            : tokens.surface,
+                        border: Border.all(
+                          color: navigationShell.currentIndex == 2
+                              ? tokens.accent
+                              : tokens.border,
+                          width: 2.5,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (navigationShell.currentIndex == 2
+                                    ? tokens.accent
+                                    : Colors.black)
+                                .withValues(alpha: 0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: _buildNavItem(
-                          context,
-                          4,
-                          Icons.settings_outlined,
-                          'Settings',
-                        ),
+                      child: Icon(
+                        Icons.qr_code_scanner_rounded,
+                        size: 30,
+                        color: navigationShell.currentIndex == 2
+                            ? Colors.white
+                            : tokens.text,
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          // Floating Center Scan Button (In-line)
-          Positioned(
-            top: -10, // Positioned in the middle of the 60px active bar height
-            child: GestureDetector(
-              onTap: () => navigationShell.goBranch(2),
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: navigationShell.currentIndex == 2
-                      ? tokens.accent
-                      : tokens.surface,
-                  border: Border.all(
-                    color: navigationShell.currentIndex == 2
-                        ? tokens.accent
-                        : tokens.border,
-                    width: 2.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (navigationShell.currentIndex == 2
-                              ? tokens.accent
-                              : Colors.black)
-                          .withValues(alpha: 0.15),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.qr_code_scanner_rounded,
-                  size: 30,
-                  color: navigationShell.currentIndex == 2
-                      ? Colors.white
-                      : tokens.text,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildNavItem(BuildContext context, int index, IconData icon, String label) {
+  Widget _buildNavItem(BuildContext context, WidgetRef ref, int index, IconData icon, String label) {
     final tokens = context.tokens;
     final isSelected = navigationShell.currentIndex == index;
 
     return InkWell(
-      onTap: () => navigationShell.goBranch(index),
+      onTap: () {
+        ref.read(showNavBarProvider.notifier).state = true;
+        navigationShell.goBranch(index);
+      },
       borderRadius: BorderRadius.zero,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

@@ -347,6 +347,13 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
+  // CHANGED: Expose seedTestData method to trigger database seeding from the UI settings screen
+  Future<void> seedTestData() async {
+    state = state.copyWith(isLoading: true);
+    await _dbHelper.seedTestData();
+    await refresh();
+  }
+
   Future<void> markDelivered(
     String id, {
     double tips = 0,
@@ -424,12 +431,56 @@ class PackagesNotifier extends _$PackagesNotifier {
   Future<void> clearDelivered() async {
     try {
       await exportToXlsx();
+      await exportToSql();
     } catch (e) {
       debugPrint('Auto-backup before clear failed: $e');
     }
     await _dbHelper.clearDeliveredPackages();
     await refresh();
     ref.read(geofenceManagerProvider).syncGeofences();
+  }
+
+  // CHANGED: Added exportToSql to write delivered package records to an SQL backup file on local storage before purging
+  Future<String> exportToSql() async {
+    final sqlContent = await _dbHelper.exportDeliveredPackagesToSql();
+    if (sqlContent.isEmpty) return '';
+    
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(
+      '${dir.path}/BRAD_backup_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql',
+    );
+    await file.create(recursive: true);
+    await file.writeAsString(sqlContent);
+    return file.path;
+  }
+
+  // CHANGED: Expose listSqlBackups to retrieve available SQL backup files from the local documents directory
+  Future<List<File>> listSqlBackups() async {
+    final dir = await getApplicationDocumentsDirectory();
+    if (!await dir.exists()) return [];
+    
+    final files = dir.listSync();
+    final List<File> backupFiles = [];
+    for (final f in files) {
+      if (f is File && f.path.endsWith('.sql') && f.path.contains('BRAD_backup_')) {
+        backupFiles.add(f);
+      }
+    }
+    // Sort descending by date (most recent first)
+    backupFiles.sort((a, b) => b.path.compareTo(a.path));
+    return backupFiles;
+  }
+
+  // CHANGED: Expose restoreFromSqlBackup to read a backup file and execute its INSERT scripts
+  Future<void> restoreFromSqlBackup(File file) async {
+    state = state.copyWith(isLoading: true);
+    try {
+      final script = await file.readAsString();
+      await _dbHelper.executeSqlScript(script);
+    } finally {
+      await refresh();
+      ref.read(geofenceManagerProvider).syncGeofences();
+    }
   }
 
   Future<String> exportToXlsx() async {

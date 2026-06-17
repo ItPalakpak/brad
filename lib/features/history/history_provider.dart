@@ -70,6 +70,8 @@ class HistoryState {
 @riverpod
 class HistoryNotifier extends _$HistoryNotifier {
   final DbHelper _dbHelper = DbHelper.instance;
+  // CHANGED: Added tracking variable to run default initialization once on first launch
+  bool _isInitial = true;
 
   @override
   HistoryState build() {
@@ -89,6 +91,13 @@ class HistoryNotifier extends _$HistoryNotifier {
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true);
     try {
+      // CHANGED: Query earliest work date from SQLite on first load to initialize historical range since the first day of work
+      if (_isInitial) {
+        _isInitial = false;
+        final earliestDate = await _dbHelper.getEarliestWorkDate();
+        state = state.copyWith(startDate: earliestDate);
+      }
+
       final list = await _dbHelper.getPackagesInDateRange(
         startDate: state.startDate,
         endDate: state.endDate,

@@ -13,6 +13,7 @@ import '../../core/database/db_helper.dart';
 import '../../shared/widgets/status_badge.dart';
 import 'packages_provider.dart';
 import 'package:brad/features/packages/package_card.dart';
+import '../../app/router.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
   const PackagesScreen({super.key});
@@ -44,206 +45,238 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     final state = ref.watch(packagesNotifierProvider);
     final notifier = ref.read(packagesNotifierProvider.notifier);
     final tokens = context.tokens;
+    final showNavBar = ref.watch(showNavBarProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            BrandLogo(type: BrandLogoType.icon, height: 32),
-            const SizedBox(width: 8),
-            Text(
-              'PACKAGES',
-              style: TextStyle(
-                color: tokens.text,
-                fontFamily: 'Geist',
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh',
-            onPressed: () => notifier.refresh(),
-          ),
-        ],
-      ),
-      body: state.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                const ConnectivityBanner(),
-
-                // Search Bar
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.zero,
-                      boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search tracking #, name, barangay...',
-                        prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear_rounded),
-                                onPressed: () {
-                                  _searchController.clear();
-                                },
-                              )
-                            : null,
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.read(packagesNotifierProvider.notifier).clearFilters();
+          await ref.read(packagesNotifierProvider.notifier).refresh();
+        },
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) {
+            return [
+              SliverAppBar(
+                floating: true,
+                snap: true,
+                pinned: false,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    BrandLogo(type: BrandLogoType.icon, height: 32),
+                    const SizedBox(width: 8),
+                    Text(
+                      'PACKAGES',
+                      style: TextStyle(
+                        color: tokens.text,
+                        fontFamily: 'Geist',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
                       ),
                     ),
-                  ),
+                  ],
                 ),
-
-                // Stackable Filter Chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  clipBehavior: Clip.none,
-                  child: Row(
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded),
+                    tooltip: 'Refresh',
+                    onPressed: () => notifier.refresh(),
+                  ),
+                ],
+              ),
+            ];
+          },
+          body: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) {
+              if (notification is ScrollUpdateNotification) {
+                final scrollDelta = notification.scrollDelta ?? 0;
+                final pixels = notification.metrics.pixels;
+                if (pixels <= 10) {
+                  ref.read(showNavBarProvider.notifier).state = true;
+                } else if (scrollDelta > 2.0) {
+                  ref.read(showNavBarProvider.notifier).state = false;
+                } else if (scrollDelta < -2.0) {
+                  ref.read(showNavBarProvider.notifier).state = true;
+                }
+              }
+              return false;
+            },
+            child: state.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Column(
                     children: [
-                      // Status Filter
-                      _buildFilterChip(
-                        label: state.statusFilters.isEmpty
-                            ? 'All Statuses'
-                            : (state.statusFilters.length == 1
-                                ? state.statusFilters.first.toUpperCase()
-                                : 'Statuses (${state.statusFilters.length})'),
-                        isActive: state.statusFilters.isNotEmpty,
-                        onTap: () => _showStatusFilterDialog(context, state.statusFilters, state.uniqueStatuses, notifier),
-                      ),
-                      const SizedBox(width: 8),
+                      const ConnectivityBanner(),
 
-                      // Location Barangay Filter
-                      _buildFilterChip(
-                        label: state.barangayFilters.isEmpty
-                            ? 'All Barangays'
-                            : (state.barangayFilters.length == 1
-                                ? state.barangayFilters.first
-                                : 'Barangays (${state.barangayFilters.length})'),
-                        isActive: state.barangayFilters.isNotEmpty,
-                        onTap: () => _showBarangayFilterDialog(context, state.barangayFilters, state.uniqueBarangays, notifier),
-                      ),
-                      const SizedBox(width: 8),
-
-                      // Payment Type Filter
-                      _buildFilterChip(
-                        label: state.paymentTypeFilters.isEmpty
-                            ? 'All Payments'
-                            : (state.paymentTypeFilters.length == 1
-                                ? (state.paymentTypeFilters.first == 'cod_cash'
-                                    ? 'COD Cash'
-                                    : (state.paymentTypeFilters.first == 'cod_digital' ? 'COD Digital' : 'Prepaid'))
-                                : 'Payments (${state.paymentTypeFilters.length})'),
-                        isActive: state.paymentTypeFilters.isNotEmpty,
-                        onTap: () => _showPaymentFilterDialog(context, state.paymentTypeFilters, state.uniquePaymentTypes, notifier),
+                      // Search Bar
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.zero,
+                            boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
+                          ),
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search tracking #, name, barangay...',
+                              prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear_rounded),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
                       ),
 
-                      // Clear Filters Button
-                      if (state.statusFilters.isNotEmpty || state.barangayFilters.isNotEmpty || state.paymentTypeFilters.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        TextButton.icon(
-                          onPressed: () => notifier.clearFilters(),
-                          icon: const Icon(Icons.clear_all_rounded, size: 16),
-                          label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                      // Stackable Filter Chips
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        clipBehavior: Clip.none,
+                        child: Row(
+                          children: [
+                            // Status Filter
+                            _buildFilterChip(
+                              label: state.statusFilters.isEmpty
+                                  ? 'All Statuses'
+                                  : (state.statusFilters.length == 1
+                                      ? state.statusFilters.first.toUpperCase()
+                                      : 'Statuses (${state.statusFilters.length})'),
+                              isActive: state.statusFilters.isNotEmpty,
+                              onTap: () => _showStatusFilterDialog(context, state.statusFilters, state.uniqueStatuses, notifier),
+                            ),
+                            const SizedBox(width: 8),
+
+                            // Location Barangay Filter
+                            _buildFilterChip(
+                              label: state.barangayFilters.isEmpty
+                                  ? 'All Barangays'
+                                  : (state.barangayFilters.length == 1
+                                      ? state.barangayFilters.first
+                                      : 'Barangays (${state.barangayFilters.length})'),
+                              isActive: state.barangayFilters.isNotEmpty,
+                              onTap: () => _showBarangayFilterDialog(context, state.barangayFilters, state.uniqueBarangays, notifier),
+                            ),
+                            const SizedBox(width: 8),
+
+                            // Payment Type Filter
+                            _buildFilterChip(
+                              label: state.paymentTypeFilters.isEmpty
+                                  ? 'All Payments'
+                                  : (state.paymentTypeFilters.length == 1
+                                      ? (state.paymentTypeFilters.first == 'cod_cash'
+                                          ? 'COD Cash'
+                                          : (state.paymentTypeFilters.first == 'cod_digital' ? 'COD Digital' : 'Prepaid'))
+                                      : 'Payments (${state.paymentTypeFilters.length})'),
+                              isActive: state.paymentTypeFilters.isNotEmpty,
+                              onTap: () => _showPaymentFilterDialog(context, state.paymentTypeFilters, state.uniquePaymentTypes, notifier),
+                            ),
+
+                            // Clear Filters Button
+                            if (state.statusFilters.isNotEmpty || state.barangayFilters.isNotEmpty || state.paymentTypeFilters.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                onPressed: () => notifier.clearFilters(),
+                                icon: const Icon(Icons.clear_all_rounded, size: 16),
+                                label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Custom Tab Switcher
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: tokens.border, width: 2.0),
+                            boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                            color: tokens.surface,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _currentTab = 0;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    color: _currentTab == 0 ? tokens.accent : tokens.surface,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      'PACKAGES LIST',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: _currentTab == 0 ? Colors.white : tokens.text,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                width: 2.0,
+                                height: 38,
+                                color: tokens.border,
+                              ),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _currentTab = 1;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    color: _currentTab == 1 ? tokens.accent : tokens.surface,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      "TODAY'S TOTALS",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: _currentTab == 1 ? Colors.white : tokens.text,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Tab Content View
+                      if (_currentTab == 0) ...[
+                        // Grouped Packages List
+                        Expanded(
+                          child: state.packages.isEmpty && state.activeRide == null
+                              ? _buildEmptyState(tokens)
+                              : _buildGroupedPackages(tokens, state.packages, state.activeRide, state.todayRides, notifier),
+                        ),
+                        // Sticky Bottom Summary Bar
+                        _buildSummaryBar(tokens, state.summary, showNavBar),
+                      ] else ...[
+                        Expanded(
+                          child: _buildTotalsAndStatsTab(tokens, state.packages, state.activeRide, state.todayRides),
                         ),
                       ],
                     ],
                   ),
-                ),
-                const SizedBox(height: 12),
-
-                // Custom Tab Switcher
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: tokens.border, width: 2.0),
-                      boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
-                      color: tokens.surface,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _currentTab = 0;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              color: _currentTab == 0 ? tokens.accent : tokens.surface,
-                              alignment: Alignment.center,
-                              child: Text(
-                                'PACKAGES LIST',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: _currentTab == 0 ? Colors.white : tokens.text,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          width: 2.0,
-                          height: 38,
-                          color: tokens.border,
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _currentTab = 1;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              color: _currentTab == 1 ? tokens.accent : tokens.surface,
-                              alignment: Alignment.center,
-                              child: Text(
-                                "TODAY'S TOTALS",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: _currentTab == 1 ? Colors.white : tokens.text,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Tab Content View
-                if (_currentTab == 0) ...[
-                  // Grouped Packages List
-                  Expanded(
-                    child: state.packages.isEmpty && state.activeRide == null
-                        ? _buildEmptyState(tokens)
-                        : _buildGroupedPackages(tokens, state.packages, state.activeRide, state.todayRides, notifier),
-                  ),
-                  // Sticky Bottom Summary Bar
-                  _buildSummaryBar(tokens, state.summary),
-                ] else ...[
-                  Expanded(
-                    child: _buildTotalsAndStatsTab(tokens, state.packages, state.activeRide, state.todayRides),
-                  ),
-                ],
-              ],
-            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -649,8 +682,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     );
   }
 
-  Widget _buildSummaryBar(AppColorTokens tokens, PaymentSummary summary) {
-    return Container(
+  Widget _buildSummaryBar(AppColorTokens tokens, PaymentSummary summary, bool showNavBar) {
+    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
       decoration: BoxDecoration(
         color: tokens.surface,
         border: Border(
@@ -661,7 +697,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
         left: 16,
         right: 16,
         top: 12,
-        bottom: MediaQuery.of(context).padding.bottom + 12,
+        bottom: (showNavBar ? 0.0 : bottomPadding) + 12.0,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

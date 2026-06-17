@@ -20,8 +20,9 @@ class ConnectivityBanner extends ConsumerWidget {
               key: const ValueKey('offline-banner'),
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: AppStatusColors.warningSoft,
+              // CHANGED: Moved color inside decoration to avoid Flutter assertion error (cannot provide both color and decoration to Container)
               decoration: BoxDecoration(
+                color: AppStatusColors.warningSoft,
                 border: Border(
                   bottom: BorderSide(color: tokens.border, width: 1.5),
                 ),

@@ -12,6 +12,7 @@ import '../../core/database/db_helper.dart';
 import '../packages/package_card.dart';
 import 'history_provider.dart';
 import 'date_range_picker.dart';
+import '../../app/router.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -42,155 +43,187 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final state = ref.watch(historyNotifierProvider);
     final notifier = ref.read(historyNotifierProvider.notifier);
     final tokens = context.tokens;
+    final showNavBar = ref.watch(showNavBarProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            BrandLogo(type: BrandLogoType.icon, height: 32),
-            const SizedBox(width: 8),
-            Text(
-              'HISTORY',
-              style: TextStyle(
-                color: tokens.text,
-                fontFamily: 'Geist',
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh',
-            onPressed: () => notifier.refresh(),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          const ConnectivityBanner(),
-
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.zero,
-                boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
-              ),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search history tracking #, name...',
-                  prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded),
-                          onPressed: () {
-                            _searchController.clear();
-                          },
-                        )
-                      : null,
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.read(historyNotifierProvider.notifier).clearFilters();
+          await ref.read(historyNotifierProvider.notifier).refresh();
+        },
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) {
+            return [
+              SliverAppBar(
+                floating: true,
+                snap: true,
+                pinned: false,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    BrandLogo(type: BrandLogoType.icon, height: 32),
+                    const SizedBox(width: 8),
+                    Text(
+                      'HISTORY',
+                      style: TextStyle(
+                        color: tokens.text,
+                        fontFamily: 'Geist',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ),
-          ),
-
-          // Horizontal Filter Bar
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            clipBehavior: Clip.none,
-            child: Row(
-              children: [
-                // Date Range Filter Chip
-                _buildFilterChip(
-                  label: '${DateFormat('MM/dd').format(state.startDate)} - ${DateFormat('MM/dd').format(state.endDate)}',
-                  isActive: true,
-                  onTap: () => _showDateRangePickerDialog(context, state.startDate, state.endDate, notifier),
-                ),
-                const SizedBox(width: 8),
-
-                // Status Filter Chip
-                _buildFilterChip(
-                  label: state.statusFilters.isEmpty
-                      ? 'All Statuses'
-                      : (state.statusFilters.length == 1
-                          ? state.statusFilters.first.toUpperCase()
-                          : 'Statuses (${state.statusFilters.length})'),
-                  isActive: state.statusFilters.isNotEmpty,
-                  onTap: () => _showStatusFilterDialog(context, state.statusFilters, state.uniqueStatuses, notifier),
-                ),
-                const SizedBox(width: 8),
-
-                // Barangay Filter Chip
-                _buildFilterChip(
-                  label: state.barangayFilters.isEmpty
-                      ? 'All Barangays'
-                      : (state.barangayFilters.length == 1
-                          ? state.barangayFilters.first
-                          : 'Barangays (${state.barangayFilters.length})'),
-                  isActive: state.barangayFilters.isNotEmpty,
-                  onTap: () => _showBarangayFilterDialog(context, state.barangayFilters, state.uniqueBarangays, notifier),
-                ),
-                const SizedBox(width: 8),
-
-                // Payment Type Filter Chip
-                _buildFilterChip(
-                  label: state.paymentTypeFilters.isEmpty
-                      ? 'All Payments'
-                      : (state.paymentTypeFilters.length == 1
-                          ? (state.paymentTypeFilters.first == 'cod_cash'
-                              ? 'COD Cash'
-                              : (state.paymentTypeFilters.first == 'cod_digital' ? 'COD Digital' : 'Prepaid'))
-                          : 'Payments (${state.paymentTypeFilters.length})'),
-                  isActive: state.paymentTypeFilters.isNotEmpty,
-                  onTap: () => _showPaymentFilterDialog(context, state.paymentTypeFilters, state.uniquePaymentTypes, notifier),
-                ),
-
-                // Clear Filters Button
-                if (state.statusFilters.isNotEmpty || state.barangayFilters.isNotEmpty || state.paymentTypeFilters.isNotEmpty || state.searchQuery.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () {
-                      _searchController.clear();
-                      notifier.clearFilters();
-                    },
-                    icon: const Icon(Icons.clear_all_rounded, size: 16),
-                    label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded),
+                    tooltip: 'Refresh',
+                    onPressed: () => notifier.refresh(),
                   ),
                 ],
+              ),
+            ];
+          },
+          body: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) {
+              if (notification is ScrollUpdateNotification) {
+                final scrollDelta = notification.scrollDelta ?? 0;
+                final pixels = notification.metrics.pixels;
+                if (pixels <= 10) {
+                  ref.read(showNavBarProvider.notifier).state = true;
+                } else if (scrollDelta > 2.0) {
+                  ref.read(showNavBarProvider.notifier).state = false;
+                } else if (scrollDelta < -2.0) {
+                  ref.read(showNavBarProvider.notifier).state = true;
+                }
+              }
+              return false;
+            },
+            child: Column(
+              children: [
+                const ConnectivityBanner(),
+
+                // Search Bar
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.zero,
+                      boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search history tracking #, name...',
+                        prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Horizontal Filter Bar
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  clipBehavior: Clip.none,
+                  child: Row(
+                    children: [
+                      // Date Range Filter Chip
+                      _buildFilterChip(
+                        label: '${DateFormat('MM/dd').format(state.startDate)} - ${DateFormat('MM/dd').format(state.endDate)}',
+                        isActive: true,
+                        onTap: () => _showDateRangePickerDialog(context, state.startDate, state.endDate, notifier),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Status Filter Chip
+                      _buildFilterChip(
+                        label: state.statusFilters.isEmpty
+                            ? 'All Statuses'
+                            : (state.statusFilters.length == 1
+                                ? state.statusFilters.first.toUpperCase()
+                                : 'Statuses (${state.statusFilters.length})'),
+                        isActive: state.statusFilters.isNotEmpty,
+                        onTap: () => _showStatusFilterDialog(context, state.statusFilters, state.uniqueStatuses, notifier),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Barangay Filter Chip
+                      _buildFilterChip(
+                        label: state.barangayFilters.isEmpty
+                            ? 'All Barangays'
+                            : (state.barangayFilters.length == 1
+                                ? state.barangayFilters.first
+                                : 'Barangays (${state.barangayFilters.length})'),
+                        isActive: state.barangayFilters.isNotEmpty,
+                        onTap: () => _showBarangayFilterDialog(context, state.barangayFilters, state.uniqueBarangays, notifier),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Payment Type Filter Chip
+                      _buildFilterChip(
+                        label: state.paymentTypeFilters.isEmpty
+                            ? 'All Payments'
+                            : (state.paymentTypeFilters.length == 1
+                                ? (state.paymentTypeFilters.first == 'cod_cash'
+                                    ? 'COD Cash'
+                                    : (state.paymentTypeFilters.first == 'cod_digital' ? 'COD Digital' : 'Prepaid'))
+                                : 'Payments (${state.paymentTypeFilters.length})'),
+                        isActive: state.paymentTypeFilters.isNotEmpty,
+                        onTap: () => _showPaymentFilterDialog(context, state.paymentTypeFilters, state.uniquePaymentTypes, notifier),
+                      ),
+
+                      // Clear Filters Button
+                      if (state.statusFilters.isNotEmpty || state.barangayFilters.isNotEmpty || state.paymentTypeFilters.isNotEmpty || state.searchQuery.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed: () {
+                            _searchController.clear();
+                            notifier.clearFilters();
+                          },
+                          icon: const Icon(Icons.clear_all_rounded, size: 16),
+                          label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Packages List
+                Expanded(
+                  child: state.isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : state.packages.isEmpty
+                          ? _buildEmptyState(tokens)
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: state.packages.length,
+                              itemBuilder: (context, index) {
+                                final pkg = state.packages[index];
+                                return PackageCard(
+                                  key: ValueKey(pkg.id),
+                                  package: pkg,
+                                  showDragHandle: false,
+                                );
+                              },
+                            ),
+                ),
+
+                // Sticky Bottom Summary Bar
+                _buildSummaryBar(tokens, state.summary, showNavBar),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-
-          // Packages List
-          Expanded(
-            child: state.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : state.packages.isEmpty
-                    ? _buildEmptyState(tokens)
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: state.packages.length,
-                        itemBuilder: (context, index) {
-                          final pkg = state.packages[index];
-                          return PackageCard(
-                            key: ValueKey(pkg.id),
-                            package: pkg,
-                            showDragHandle: false,
-                          );
-                        },
-                      ),
-          ),
-
-          // Sticky Bottom Summary Bar
-          _buildSummaryBar(tokens, state.summary),
-        ],
+        ),
       ),
     );
   }
@@ -257,8 +290,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     );
   }
 
-  Widget _buildSummaryBar(AppColorTokens tokens, PaymentSummary summary) {
-    return Container(
+  Widget _buildSummaryBar(AppColorTokens tokens, PaymentSummary summary, bool showNavBar) {
+    final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
       decoration: BoxDecoration(
         color: tokens.surface,
         border: Border(top: BorderSide(color: tokens.border, width: 1.5)),
@@ -267,7 +303,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         left: 16,
         right: 16,
         top: 12,
-        bottom: MediaQuery.of(context).padding.bottom + 12,
+        bottom: (showNavBar ? 0.0 : bottomPadding) + 12.0,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
