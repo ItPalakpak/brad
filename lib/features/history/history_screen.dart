@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
@@ -75,6 +76,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   ],
                 ),
                 actions: [
+                  IconButton(
+                    icon: const Icon(Icons.map_rounded),
+                    tooltip: 'Ride Tracking Map',
+                    onPressed: () => context.push('/history/map'),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.refresh_rounded),
                     tooltip: 'Refresh',
@@ -444,7 +450,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                          child: Text(
+                            'Cancel',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppStatusColors.error),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         TextButton(
@@ -542,7 +552,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                          child: Text(
+                            'Cancel',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppStatusColors.error),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         TextButton(
@@ -647,7 +661,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                          child: Text(
+                            'Cancel',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppStatusColors.error),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         TextButton(

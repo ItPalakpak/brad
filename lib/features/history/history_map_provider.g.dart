@@ -1,26 +1,27 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'packages_provider.dart';
+part of 'history_map_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$packagesNotifierHash() => r'd4b86bd98173ab56a0b46c2ae759612607b1fbf3';
+String _$historyMapNotifierHash() =>
+    r'09d60d79fd35931cff31b1167a8ab4444699cc4b';
 
-/// See also [PackagesNotifier].
-@ProviderFor(PackagesNotifier)
-final packagesNotifierProvider =
-    AutoDisposeNotifierProvider<PackagesNotifier, PackagesState>.internal(
-      PackagesNotifier.new,
-      name: r'packagesNotifierProvider',
+/// See also [HistoryMapNotifier].
+@ProviderFor(HistoryMapNotifier)
+final historyMapNotifierProvider =
+    AutoDisposeNotifierProvider<HistoryMapNotifier, HistoryMapState>.internal(
+      HistoryMapNotifier.new,
+      name: r'historyMapNotifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$packagesNotifierHash,
+          : _$historyMapNotifierHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$PackagesNotifier = AutoDisposeNotifier<PackagesState>;
+typedef _$HistoryMapNotifier = AutoDisposeNotifier<HistoryMapState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

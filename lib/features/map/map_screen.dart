@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -38,6 +39,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   // Pin Mode States
   bool _isPinMode = false;
   LatLng _mapCenter = const LatLng(8.6074, 124.8957); // Default Claveria Coords
+
+  // Draw Perimeter States
+  bool _isDrawMode = false;
+  final List<LatLng> _drawnPoints = [];
 
   @override
   void initState() {
@@ -192,6 +197,312 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
+  void _showArchiveMiniCard(ReceiverArchive archive) {
+    final tokens = context.tokens;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.zero,
+            border: Border(
+              top: BorderSide(color: tokens.border, width: 2.0),
+              left: BorderSide(color: tokens.border, width: 2.0),
+              right: BorderSide(color: tokens.border, width: 2.0),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: tokens.shadowColor,
+                offset: const Offset(0, -4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).padding.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.withValues(alpha: 0.1),
+                      border: Border.all(color: Colors.deepPurple, width: 1.5),
+                    ),
+                    child: const Text(
+                      'GEO-ARCHIVE',
+                      style: TextStyle(
+                        color: Colors.deepPurple,
+                        fontFamily: 'JetBrains Mono',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${archive.lat.toStringAsFixed(6)}, ${archive.lng.toStringAsFixed(6)}',
+                    style: TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 11,
+                      color: tokens.textSubtle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                archive.name,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              if (archive.phone != null && archive.phone!.isNotEmpty) ...[
+                Row(
+                  children: [
+                    Icon(Icons.phone_outlined, size: 14, color: tokens.textSubtle),
+                    const SizedBox(width: 4),
+                    Text(
+                      archive.phone!,
+                      style: TextStyle(color: tokens.textMuted, fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2.0),
+                    child: Icon(Icons.location_on_outlined, size: 14, color: tokens.textSubtle),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      [archive.street, archive.zone, archive.barangay, archive.city].where((s) => s != null && s.isNotEmpty).join(', '),
+                      style: TextStyle(color: tokens.textMuted, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OffsetShadowButton.outlined(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('CLOSE'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _sortDrawnPointsClockwise() {
+    if (_drawnPoints.length < 3) return;
+    
+    double latSum = 0;
+    double lngSum = 0;
+    for (final pt in _drawnPoints) {
+      latSum += pt.latitude;
+      lngSum += pt.longitude;
+    }
+    final centerLat = latSum / _drawnPoints.length;
+    final centerLng = lngSum / _drawnPoints.length;
+    
+    _drawnPoints.sort((a, b) {
+      final angleA = math.atan2(a.latitude - centerLat, a.longitude - centerLng);
+      final angleB = math.atan2(b.latitude - centerLat, b.longitude - centerLng);
+      return angleA.compareTo(angleB);
+    });
+  }
+
+  LatLng _calculateCentroid(List<LatLng> points) {
+    if (points.isEmpty) return const LatLng(0, 0);
+    double latSum = 0;
+    double lngSum = 0;
+    for (final pt in points) {
+      latSum += pt.latitude;
+      lngSum += pt.longitude;
+    }
+    return LatLng(latSum / points.length, lngSum / points.length);
+  }
+
+  void _confirmDeletePerimeter(CustomPerimeter perimeter) {
+    final tokens = context.tokens;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: OffsetShadowCard(
+            backgroundColor: tokens.surface,
+            shadowColor: tokens.border,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Delete Perimeter',
+                  style: TextStyle(
+                    fontFamily: 'Geist',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: tokens.text,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to delete the perimeter "${perimeter.name}"?',
+                  style: TextStyle(fontSize: 13, color: tokens.textSubtle),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppStatusColors.error,
+                      ),
+                      child: const Text('CANCEL', textAlign: TextAlign.center),
+                    ),
+                    const SizedBox(width: 8),
+                    OffsetShadowButton.elevated(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        await ref.read(mapStateNotifierProvider.notifier).deletePerimeter(perimeter.id);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Perimeter "${perimeter.name}" deleted.'),
+                          ),
+                        );
+                      },
+                      child: const Text('DELETE'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _savePerimeterDialog() {
+    final nameController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final tokens = context.tokens;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: OffsetShadowCard(
+            backgroundColor: tokens.surface,
+            shadowColor: tokens.border,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Save Custom Perimeter',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: tokens.text,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.zero,
+                      boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                    ),
+                    child: TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Perimeter Name *',
+                        hintText: 'e.g. Zone A Delivery Area',
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Please enter a name';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppStatusColors.error,
+                        ),
+                        child: const Text('CANCEL', textAlign: TextAlign.center),
+                      ),
+                      const SizedBox(width: 8),
+                      OffsetShadowButton.elevated(
+                        onPressed: () async {
+                          if (!formKey.currentState!.validate()) return;
+                          final name = nameController.text.trim();
+                          
+                          Navigator.pop(context);
+                          
+                          await ref.read(mapStateNotifierProvider.notifier).addPerimeter(name, _drawnPoints);
+                          
+                          if (!context.mounted) return;
+                          setState(() {
+                            _isDrawMode = false;
+                            _drawnPoints.clear();
+                          });
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Perimeter "$name" saved successfully!'),
+                            ),
+                          );
+                        },
+                        child: const Text('SAVE PERIMETER'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
+
   String _formatDistance(double meters) {
     if (meters < 1000) {
       return '${meters.toStringAsFixed(0)} m';
@@ -279,7 +590,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     children: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('CANCEL'),
+                        style: TextButton.styleFrom(foregroundColor: AppStatusColors.error),
+                        child: const Text('CANCEL', textAlign: TextAlign.center),
                       ),
                       const SizedBox(width: 8),
                       OffsetShadowButton.elevated(
@@ -397,11 +709,41 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         ),
         actions: [
           IconButton(
+            icon: Icon(
+              mapState.showPerimeters ? Icons.hexagon : Icons.hexagon_outlined,
+              color: mapState.showPerimeters ? tokens.accent : null,
+            ),
+            tooltip: mapState.showPerimeters ? 'Hide Custom Perimeters' : 'Show Custom Perimeters',
+            onPressed: () {
+              if (mapState.showPerimeters && _isDrawMode) {
+                setState(() {
+                  _isDrawMode = false;
+                  _drawnPoints.clear();
+                });
+              }
+              ref.read(mapStateNotifierProvider.notifier).togglePerimeters();
+            },
+          ),
+          IconButton(
+            icon: Icon(
+              mapState.showArchives ? Icons.bookmarks_rounded : Icons.bookmarks_outlined,
+              color: mapState.showArchives ? Colors.deepPurple : null,
+            ),
+            tooltip: mapState.showArchives ? 'Hide Archived Locations' : 'Show Archived Locations',
+            onPressed: () {
+              ref.read(mapStateNotifierProvider.notifier).toggleArchives();
+            },
+          ),
+          IconButton(
             icon: Icon(_isPinMode ? Icons.close_rounded : Icons.add_location_alt_outlined),
             tooltip: _isPinMode ? 'Exit Pin Mode' : 'Pin Mode',
             onPressed: () {
               setState(() {
                 _isPinMode = !_isPinMode;
+                if (_isPinMode) {
+                  _isDrawMode = false;
+                  _drawnPoints.clear();
+                }
               });
             },
           ),
@@ -432,6 +774,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           _isMapReady = true;
                         });
                         _centerOnMe();
+                      },
+                      onTap: (tapPosition, point) {
+                        if (_isDrawMode) {
+                          setState(() {
+                            _drawnPoints.add(point);
+                            if (_drawnPoints.length >= 3) {
+                              _sortDrawnPointsClockwise();
+                            }
+                          });
+                        }
                       },
                     ),
                     children: [
@@ -477,6 +829,120 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           );
                         }).toList(),
                       ),
+
+                      // Archived Receiver Markers
+                      if (mapState.showArchives)
+                        MarkerLayer(
+                          markers: mapState.archives.map((archive) {
+                            return Marker(
+                              point: LatLng(archive.lat, archive.lng),
+                              width: 40,
+                              height: 40,
+                              child: GestureDetector(
+                                onTap: () => _showArchiveMiniCard(archive),
+                                child: const Icon(
+                                  Icons.bookmark_added_rounded,
+                                  color: Colors.deepPurple,
+                                  size: 40,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+
+                      // Saved Custom Perimeters Polygons
+                      if (mapState.showPerimeters && mapState.perimeters.isNotEmpty)
+                        PolygonLayer(
+                          polygons: mapState.perimeters.map((p) {
+                            return Polygon(
+                              points: p.points,
+                              color: tokens.accent.withValues(alpha: 0.15),
+                              borderColor: tokens.accent,
+                              borderStrokeWidth: 2.0,
+                            );
+                          }).toList(),
+                        ),
+
+                      // Perimeter Name Label Markers
+                      if (mapState.showPerimeters && mapState.perimeters.isNotEmpty)
+                        MarkerLayer(
+                          markers: mapState.perimeters.map((p) {
+                            final center = _calculateCentroid(p.points);
+                            return Marker(
+                              point: center,
+                              width: 150,
+                              height: 35,
+                              child: GestureDetector(
+                                onTap: () => _confirmDeletePerimeter(p),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: tokens.surface.withValues(alpha: 0.85),
+                                    border: Border.all(color: tokens.border, width: 1.5),
+                                    boxShadow: [AppShadows.offsetXs(tokens.shadowColor)],
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    p.name,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: tokens.text,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+
+                      // Draft Polygon (filled shape if >= 3 points in Draw Mode)
+                      if (_isDrawMode && _drawnPoints.length >= 3)
+                        PolygonLayer(
+                          polygons: [
+                            Polygon(
+                              points: _drawnPoints,
+                              color: tokens.accent.withValues(alpha: 0.12),
+                              borderColor: tokens.accent,
+                              borderStrokeWidth: 1.5,
+                            ),
+                          ],
+                        ),
+
+                      // Draft Polylines (outline border connecting points in Draw Mode)
+                      if (_isDrawMode && _drawnPoints.isNotEmpty)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _drawnPoints.length > 2
+                                  ? [..._drawnPoints, _drawnPoints.first]
+                                  : _drawnPoints,
+                              color: tokens.accent,
+                              strokeWidth: 2.0,
+                            ),
+                          ],
+                        ),
+
+                      // Draft Points (marker dots representing tapped nodes in Draw Mode)
+                      if (_isDrawMode && _drawnPoints.isNotEmpty)
+                        MarkerLayer(
+                          markers: _drawnPoints.map((pt) {
+                            return Marker(
+                              point: pt,
+                              width: 10,
+                              height: 10,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: tokens.accent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 1.0),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
 
                       // User GPS position marker
                       if (mapState.userPosition != null)
@@ -681,21 +1147,158 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   ),
 
                 // Centering GPS button wrapped in offset shadow
-                if (!_isPinMode)
+                if (!_isPinMode && !_isDrawMode)
                   Positioned(
                     bottom: 16,
                     right: 16,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (mapState.showPerimeters) ...[
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.zero,
+                              boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                            ),
+                            child: FloatingActionButton(
+                              heroTag: 'map-draw-perimeter-fab',
+                              backgroundColor: tokens.accent,
+                              foregroundColor: Colors.white,
+                              onPressed: () {
+                                setState(() {
+                                  _isDrawMode = true;
+                                  _isPinMode = false;
+                                  _drawnPoints.clear();
+                                });
+                              },
+                              child: const Icon(Icons.add_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.zero,
+                            boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                          ),
+                          child: FloatingActionButton(
+                            heroTag: 'map-gps-fab',
+                            onPressed: _isLocating ? null : _centerOnMe,
+                            child: _isLocating
+                                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
+                                : const Icon(Icons.my_location_rounded),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Draw Mode top instruction banner
+                if (_isDrawMode)
+                  Positioned(
+                    top: 12,
+                    left: 16,
+                    right: 16,
                     child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.zero,
+                        color: tokens.surface,
+                        border: Border.all(color: tokens.border, width: 2.0),
                         boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
                       ),
-                      child: FloatingActionButton(
-                        heroTag: 'map-gps-fab',
-                        onPressed: _isLocating ? null : _centerOnMe,
-                        child: _isLocating
-                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
-                            : const Icon(Icons.my_location_rounded),
+                      child: Row(
+                        children: [
+                          Icon(Icons.draw_rounded, color: tokens.accent, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'Draw Perimeter Mode',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                Text(
+                                  'Tap the map to add boundary points (min. 3). Total points: ${_drawnPoints.length}',
+                                  style: TextStyle(color: tokens.textSubtle, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Draw Mode bottom controls panel
+                if (_isDrawMode)
+                  Positioned(
+                    bottom: 24,
+                    left: 24,
+                    right: 24,
+                    child: OffsetShadowCard(
+                      backgroundColor: tokens.surface,
+                      shadowColor: tokens.border,
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OffsetShadowButton.outlined(
+                                  onPressed: _drawnPoints.isEmpty
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            _drawnPoints.clear();
+                                          });
+                                        },
+                                  child: const Text('CLEAR'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OffsetShadowCard(
+                                  backgroundColor: _drawnPoints.length >= 3 ? tokens.accent : tokens.hover,
+                                  shadowColor: tokens.border,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  onTap: _drawnPoints.length >= 3
+                                      ? () => _savePerimeterDialog()
+                                      : null,
+                                  child: Center(
+                                    child: Text(
+                                      'SAVE',
+                                      style: TextStyle(
+                                        color: _drawnPoints.length >= 3 ? tokens.textInvert : tokens.textSubtle,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _isDrawMode = false;
+                                _drawnPoints.clear();
+                              });
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppStatusColors.error,
+                            ),
+                            child: const Text(
+                              'CANCEL',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

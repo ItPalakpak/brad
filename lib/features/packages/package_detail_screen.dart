@@ -21,6 +21,8 @@ import '../map/pin_picker_sheet.dart';
 import 'packages_provider.dart';
 import 'package:brad/features/packages/package_form.dart';
 import 'package:brad/features/packages/delivery_confirmation_modal.dart';
+// CHANGED: Import image_picker for ImageSource selection in bottom sheet
+import 'package:image_picker/image_picker.dart';
 
 class PackageDetailScreen extends ConsumerStatefulWidget {
   final String packageId;
@@ -41,6 +43,8 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
   List<DeliveryAttempt> _attempts = [];
   bool _isLoading = true;
   bool _isEditing = false;
+  // CHANGED: GlobalKey to interact with the PackageFormState
+  final GlobalKey<PackageFormState> _formKey = GlobalKey<PackageFormState>();
 
   @override
   void initState() {
@@ -166,7 +170,8 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('CANCEL'),
+                          style: TextButton.styleFrom(foregroundColor: AppStatusColors.error),
+                          child: const Text('CANCEL', textAlign: TextAlign.center),
                         ),
                         const SizedBox(width: 8),
                         OffsetShadowButton.elevated(
@@ -221,6 +226,140 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
     }
   }
 
+  // CHANGED: Bottom sheet that allows rider to pick between Camera & Gallery for OCR field population
+  void _showScanSourceBottomSheet() {
+    final tokens = context.tokens;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.zero,
+            border: Border(
+              top: BorderSide(color: tokens.border, width: 2.0),
+              left: BorderSide(color: tokens.border, width: 2.0),
+              right: BorderSide(color: tokens.border, width: 2.0),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: tokens.shadowColor,
+                offset: const Offset(0, -4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 50,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: tokens.textSubtle.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.zero,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Icon(Icons.document_scanner_rounded, color: tokens.accent),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Auto-Populate Fields',
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.text,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Scan package details from a parcel label photo or upload.',
+                style: TextStyle(color: tokens.textSubtle, fontSize: 13),
+              ),
+              const SizedBox(height: 24),
+              OffsetShadowCard(
+                backgroundColor: tokens.accent,
+                shadowColor: tokens.border,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                onTap: () {
+                  Navigator.pop(context);
+                  _formKey.currentState?.scanAndPopulateFields(source: ImageSource.camera);
+                },
+                child: Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.camera_alt_rounded, color: tokens.textInvert, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'TAKE PHOTO (CAMERA)',
+                        style: TextStyle(
+                          color: tokens.textInvert,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OffsetShadowCard(
+                backgroundColor: tokens.surfaceAlt,
+                shadowColor: tokens.border,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                onTap: () {
+                  Navigator.pop(context);
+                  _formKey.currentState?.scanAndPopulateFields(source: ImageSource.gallery);
+                },
+                child: Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.photo_library_rounded, color: tokens.text, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'UPLOAD PHOTO (GALLERY)',
+                        style: TextStyle(
+                          color: tokens.text,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OffsetShadowButton.outlined(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                foregroundColor: AppStatusColors.error,
+                child: const Text('CANCEL', textAlign: TextAlign.center),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -248,12 +387,21 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
               }
             },
           ),
+          // CHANGED: Added scan icon to App Bar to trigger ML field auto-population separately
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.document_scanner_outlined),
+              tooltip: 'Scan Label',
+              onPressed: _showScanSourceBottomSheet,
+            ),
+          ],
         ),
         body: Column(
           children: [
             const ConnectivityBanner(),
             Expanded(
               child: PackageForm(
+                key: _formKey,
                 package: _package,
                 initialTrackingNumber: widget.initialTrackingNumber,
                 onSaved: _onSaved,
@@ -898,7 +1046,8 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('CANCEL'),
+              style: TextButton.styleFrom(foregroundColor: AppStatusColors.error),
+              child: const Text('CANCEL', textAlign: TextAlign.center),
             ),
             OffsetShadowButton.elevated(
               backgroundColor: AppStatusColors.error,
@@ -1056,7 +1205,11 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                          child: Text(
+                            'Cancel',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppStatusColors.error),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         OffsetShadowButton.elevated(

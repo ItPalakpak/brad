@@ -480,7 +480,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: Text('Cancel', style: TextStyle(color: tokens.textSubtle)),
+                      child: Text(
+                        'Cancel',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppStatusColors.error),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     OffsetShadowButton.elevated(

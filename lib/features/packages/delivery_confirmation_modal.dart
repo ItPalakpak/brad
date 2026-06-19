@@ -475,7 +475,8 @@ class _DeliveryConfirmationModalState
                   TextButton(
                     onPressed:
                         _isSubmitting ? null : () => Navigator.pop(context),
-                    child: const Text('CANCEL'),
+                    style: TextButton.styleFrom(foregroundColor: AppStatusColors.error),
+                    child: const Text('CANCEL', textAlign: TextAlign.center),
                   ),
                   const SizedBox(width: 8),
                   OffsetShadowButton.elevated(

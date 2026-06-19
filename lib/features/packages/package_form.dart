@@ -30,10 +30,10 @@ class PackageForm extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<PackageForm> createState() => _PackageFormState();
+  ConsumerState<PackageForm> createState() => PackageFormState();
 }
 
-class _PackageFormState extends ConsumerState<PackageForm> {
+class PackageFormState extends ConsumerState<PackageForm> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _trackingController;
@@ -47,6 +47,9 @@ class _PackageFormState extends ConsumerState<PackageForm> {
 
   late TextEditingController _codCashController;
   late TextEditingController _codDigitalController;
+
+  late FocusNode _nameFocusNode;
+  late FocusNode _phoneFocusNode;
 
   String _paymentType = 'cod_cash';
   double? _lat;
@@ -75,6 +78,28 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     _lat = p?.lat;
     _lng = p?.lng;
     _photoPath = p?.photoPath;
+
+    _nameFocusNode = FocusNode();
+    _phoneFocusNode = FocusNode();
+
+    _nameFocusNode.addListener(() {
+      if (!_nameFocusNode.hasFocus) {
+        _checkAndFillFromArchive();
+      }
+    });
+
+    _phoneFocusNode.addListener(() {
+      if (!_phoneFocusNode.hasFocus) {
+        _checkAndFillFromArchive();
+      }
+    });
+
+    _phoneController.addListener(() {
+      final text = _phoneController.text.trim();
+      if (text.length == 11) {
+        _checkAndFillFromArchive();
+      }
+    });
   }
 
   @override
@@ -89,6 +114,8 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     _cityController.dispose();
     _codCashController.dispose();
     _codDigitalController.dispose();
+    _nameFocusNode.dispose();
+    _phoneFocusNode.dispose();
     super.dispose();
   }
 
@@ -155,6 +182,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     }
   }
 
+  // CHANGED: Removed the automatic call to _runOcrOnPhoto so that capturing a parcel photo doesn't trigger OCR auto-population.
   Future<void> _takePhoto() async {
     final ImagePicker picker = ImagePicker();
     try {
@@ -171,17 +199,112 @@ class _PackageFormState extends ConsumerState<PackageForm> {
         setState(() {
           _photoPath = savedFile.path;
         });
-
-        // CHANGED: Automatically run OCR on the captured parcel photo to auto-populate fields
-        await _runOcrOnPhoto(savedFile.path);
       }
     } catch (e) {
       debugPrint('Error taking photo: $e');
     }
   }
 
-  // CHANGED: Process the photo with ML Kit Text Recognition to extract details
-  Future<void> _runOcrOnPhoto(String imagePath) async {
+  // CHANGED: Public method to trigger OCR scan from external sources (Camera or Gallery)
+  // Supports capturing/uploading multiple photos sequentially.
+  Future<void> scanAndPopulateFields({required ImageSource source}) async {
+    final ImagePicker picker = ImagePicker();
+    final List<String> paths = [];
+    try {
+      if (source == ImageSource.gallery) {
+        // CHANGED: Use pickMultiImage to allow uploading multiple photos from the gallery
+        final List<XFile> images = await picker.pickMultiImage(
+          imageQuality: 80,
+        );
+        if (images.isNotEmpty) {
+          paths.addAll(images.map((img) => img.path));
+        }
+      } else {
+        // Camera source: allow the rider to capture multiple photos sequentially
+        bool captureMore = true;
+        while (captureMore) {
+          final XFile? image = await picker.pickImage(
+            source: ImageSource.camera,
+            imageQuality: 80,
+          );
+          if (image == null) break;
+          paths.add(image.path);
+
+          // Ask the rider if they want to capture another photo to aggregate details
+          if (mounted) {
+            final bool? another = await showDialog<bool>(
+              context: context,
+              builder: (context) => Dialog(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                child: OffsetShadowCard(
+                  backgroundColor: context.tokens.surface,
+                  shadowColor: context.tokens.border,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Capture Another Photo?',
+                        style: TextStyle(
+                          fontFamily: 'Geist',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'You have captured ${paths.length} photo(s). Would you like to capture another photo to scan more details?',
+                        style: TextStyle(fontSize: 13, color: context.tokens.textSubtle),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            style: TextButton.styleFrom(foregroundColor: AppStatusColors.error),
+                            child: const Text('NO, SCAN NOW', textAlign: TextAlign.center),
+                          ),
+                          const SizedBox(width: 8),
+                          OffsetShadowButton.elevated(
+                            backgroundColor: context.tokens.accent,
+                            foregroundColor: Colors.white,
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('YES, CAPTURE MORE'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+            captureMore = another == true;
+          } else {
+            captureMore = false;
+          }
+        }
+      }
+
+      if (paths.isNotEmpty) {
+        await _runOcrOnPhotos(paths);
+      }
+    } catch (e) {
+      debugPrint('Error during scan picker: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick image for scan: $e'),
+            backgroundColor: AppStatusColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // CHANGED: Process multiple photos with ML Kit Text Recognition to extract and aggregate details
+  Future<void> _runOcrOnPhotos(List<String> imagePaths) async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -201,14 +324,6 @@ class _PackageFormState extends ConsumerState<PackageForm> {
     );
 
     try {
-      final inputImage = InputImage.fromFilePath(imagePath);
-      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-      await textRecognizer.close();
-
-      final text = recognizedText.text;
-      if (text.isEmpty) return;
-
       String? parsedName;
       String? parsedPhone;
       double? parsedCodAmount;
@@ -217,109 +332,135 @@ class _PackageFormState extends ConsumerState<PackageForm> {
       String? parsedBarangay;
       String? parsedCity;
 
-      // 1. Phone parsing: match (09|\+63|63)\d{9} or \d{4}[- ]\d{3}[- ]\d{4}
-      final phoneRegex = RegExp(r'\b(?:09|\+639|639)\d{9}\b|\b\d{4}[- ]?\d{3}[- ]?\d{4}\b');
-      final phoneMatch = phoneRegex.firstMatch(text);
-      if (phoneMatch != null) {
-        parsedPhone = phoneMatch.group(0)?.replaceAll(RegExp(r'[- ]'), '');
-        // Normalize starting with 639 or +639 to 09
-        if (parsedPhone != null) {
-          if (parsedPhone.startsWith('+639')) {
-            parsedPhone = '09${parsedPhone.substring(4)}';
-          } else if (parsedPhone.startsWith('639')) {
-            parsedPhone = '09${parsedPhone.substring(3)}';
+      for (final path in imagePaths) {
+        final inputImage = InputImage.fromFilePath(path);
+        final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+        final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+        await textRecognizer.close();
+
+        final text = recognizedText.text;
+        if (text.isEmpty) continue;
+
+        // 1. Phone parsing: match (09|\+63|63)\d{9} or \d{4}[- ]\d{3}[- ]\d{4}
+        if (parsedPhone == null || parsedPhone.isEmpty) {
+          final phoneRegex = RegExp(r'\b(?:09|\+639|639)\d{9}\b|\b\d{4}[- ]?\d{3}[- ]?\d{4}\b');
+          final phoneMatch = phoneRegex.firstMatch(text);
+          if (phoneMatch != null) {
+            parsedPhone = phoneMatch.group(0)?.replaceAll(RegExp(r'[- ]'), '');
+            // Normalize starting with 639 or +639 to 09
+            if (parsedPhone != null) {
+              if (parsedPhone.startsWith('+639')) {
+                parsedPhone = '09${parsedPhone.substring(4)}';
+              } else if (parsedPhone.startsWith('639')) {
+                parsedPhone = '09${parsedPhone.substring(3)}';
+              }
+            }
           }
         }
-      }
 
-      // 2. COD amount parsing:
-      // Search for keywords COD, Cash on Delivery, Collect, PHP, ₱ followed by numbers
-      final codRegex = RegExp(
-        r'\b(?:cod|collect|collectable|amount|php|₱)\b\s*[:=-]?\s*(?:php|₱)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
-        caseSensitive: false,
-      );
-      final codMatches = codRegex.allMatches(text);
-      for (final match in codMatches) {
-        final amtStr = match.group(1)?.replaceAll(',', '');
-        if (amtStr != null) {
-          final parsed = double.tryParse(amtStr);
-          if (parsed != null && parsed > 0) {
-            parsedCodAmount = parsed;
-            break;
+        // 2. COD amount parsing:
+        // Search for keywords COD, Cash on Delivery, Collect, PHP, ₱ followed by numbers
+        if (parsedCodAmount == null || parsedCodAmount == 0.0) {
+          final codRegex = RegExp(
+            r'\b(?:cod|collect|collectable|amount|php|₱)\b\s*[:=-]?\s*(?:php|₱)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+            caseSensitive: false,
+          );
+          final codMatches = codRegex.allMatches(text);
+          for (final match in codMatches) {
+            final amtStr = match.group(1)?.replaceAll(',', '');
+            if (amtStr != null) {
+              final parsed = double.tryParse(amtStr);
+              if (parsed != null && parsed > 0) {
+                parsedCodAmount = parsed;
+                break;
+              }
+            }
           }
         }
-      }
 
-      // 3. Name parsing: lines starting with or containing "To:", "Consignee:", "Receiver:", "Name:"
-      final lines = text.split('\n');
-      final namePrefixRegex = RegExp(
-        r'^\s*(?:to|name|consignee|receiver|recipient)\s*[:=-]\s*(.*)$',
-        caseSensitive: false,
-      );
-      for (final line in lines) {
-        final match = namePrefixRegex.firstMatch(line);
-        if (match != null) {
-          final candidate = match.group(1)?.trim();
-          if (candidate != null && candidate.isNotEmpty && candidate.length > 2) {
-            parsedName = candidate;
-            break;
+        // 3. Name parsing: lines starting with or containing "To:", "Consignee:", "Receiver:", "Name:"
+        if (parsedName == null || parsedName.isEmpty) {
+          final lines = text.split('\n');
+          final namePrefixRegex = RegExp(
+            r'^\s*(?:to|name|consignee|receiver|recipient)\s*[:=-]\s*(.*)$',
+            caseSensitive: false,
+          );
+          for (final line in lines) {
+            final match = namePrefixRegex.firstMatch(line);
+            if (match != null) {
+              final candidate = match.group(1)?.trim();
+              if (candidate != null && candidate.isNotEmpty && candidate.length > 2) {
+                parsedName = candidate;
+                break;
+              }
+            }
           }
         }
-      }
 
-      // 4. Address parsing:
-      // Zone / Purok
-      final zoneRegex = RegExp(r'\b(?:zone|purok|puk|pk)\s*([0-9a-zA-Z\-]+)', caseSensitive: false);
-      final zoneMatch = zoneRegex.firstMatch(text);
-      if (zoneMatch != null) {
-        parsedZone = zoneMatch.group(0)?.trim();
-      }
-
-      // Barangay search: try to match against database or local Claveria barangays list
-      final packagesState = ref.read(packagesNotifierProvider);
-      final dbBarangays = packagesState.uniqueBarangays;
-      const defaultBarangays = [
-        'Ani-e', 'Cabacungan', 'Gumaod', 'Hinaplanan', 'Kalawihon', 'Lanise',
-        'Libertad', 'Madaguing', 'Malagana', 'Minsacopa', 'Patrocinio', 'Plaridel',
-        'Poblacion', 'Punong', 'Rizal', 'Santa Cruz', 'Tamboboan', 'Tipolohon'
-      ];
-      final barangaysToSearch = dbBarangays.isNotEmpty ? dbBarangays : defaultBarangays;
-      for (final b in barangaysToSearch) {
-        if (b.isNotEmpty && text.toLowerCase().contains(b.toLowerCase())) {
-          parsedBarangay = b;
-          break;
+        // 4. Address parsing:
+        // Zone / Purok
+        if (parsedZone == null || parsedZone.isEmpty) {
+          final zoneRegex = RegExp(r'\b(?:zone|purok|puk|pk)\s*([0-9a-zA-Z\-]+)', caseSensitive: false);
+          final zoneMatch = zoneRegex.firstMatch(text);
+          if (zoneMatch != null) {
+            parsedZone = zoneMatch.group(0)?.trim();
+          }
         }
-      }
 
-      // City search
-      final dbCities = packagesState.uniqueCities;
-      final citiesToSearch = dbCities.isNotEmpty ? dbCities : ['Claveria', 'Gingoog', 'Cagayan de Oro'];
-      for (final c in citiesToSearch) {
-        if (c.isNotEmpty && text.toLowerCase().contains(c.toLowerCase())) {
-          parsedCity = c;
-          break;
+        // Barangay search: try to match against database or local Claveria barangays list
+        if (parsedBarangay == null || parsedBarangay.isEmpty) {
+          final packagesState = ref.read(packagesNotifierProvider);
+          final dbBarangays = packagesState.uniqueBarangays;
+          const defaultBarangays = [
+            'Ani-e', 'Cabacungan', 'Gumaod', 'Hinaplanan', 'Kalawihon', 'Lanise',
+            'Libertad', 'Madaguing', 'Malagana', 'Minsacopa', 'Patrocinio', 'Plaridel',
+            'Poblacion', 'Punong', 'Rizal', 'Santa Cruz', 'Tamboboan', 'Tipolohon'
+          ];
+          final barangaysToSearch = dbBarangays.isNotEmpty ? dbBarangays : defaultBarangays;
+          for (final b in barangaysToSearch) {
+            if (b.isNotEmpty && text.toLowerCase().contains(b.toLowerCase())) {
+              parsedBarangay = b;
+              break;
+            }
+          }
         }
-      }
 
-      // Street Address parsing
-      final streetRegex = RegExp(
-        r'.*?\b(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|boulevard|highway|h-way)\b.*',
-        caseSensitive: false,
-      );
-      final streetMatch = streetRegex.firstMatch(text);
-      if (streetMatch != null) {
-        parsedStreet = streetMatch.group(0)?.trim();
-      }
+        // City search
+        if (parsedCity == null || parsedCity.isEmpty) {
+          final packagesState = ref.read(packagesNotifierProvider);
+          final dbCities = packagesState.uniqueCities;
+          final citiesToSearch = dbCities.isNotEmpty ? dbCities : ['Claveria', 'Gingoog', 'Cagayan de Oro'];
+          for (final c in citiesToSearch) {
+            if (c.isNotEmpty && text.toLowerCase().contains(c.toLowerCase())) {
+              parsedCity = c;
+              break;
+            }
+          }
+        }
 
-      if (parsedStreet == null || parsedStreet.isEmpty) {
-        for (final line in lines) {
-          final lower = line.toLowerCase();
-          if (lower.contains('address') || lower.contains('ship to') || lower.contains('deliver to')) {
-            parsedStreet = line.replaceAll(
-              RegExp(r'^\s*(?:address|ship to|deliver to)\s*[:=-]\s*', caseSensitive: false),
-              '',
-            ).trim();
-            break;
+        // Street Address parsing
+        if (parsedStreet == null || parsedStreet.isEmpty) {
+          final streetRegex = RegExp(
+            r'.*?\b(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|boulevard|highway|h-way)\b.*',
+            caseSensitive: false,
+          );
+          final streetMatch = streetRegex.firstMatch(text);
+          if (streetMatch != null) {
+            parsedStreet = streetMatch.group(0)?.trim();
+          }
+
+          if (parsedStreet == null || parsedStreet.isEmpty) {
+            final lines = text.split('\n');
+            for (final line in lines) {
+              final lower = line.toLowerCase();
+              if (lower.contains('address') || lower.contains('ship to') || lower.contains('deliver to')) {
+                parsedStreet = line.replaceAll(
+                  RegExp(r'^\s*(?:address|ship to|deliver to)\s*[:=-]\s*', caseSensitive: false),
+                  '',
+                ).trim();
+                break;
+              }
+            }
           }
         }
       }
@@ -372,6 +513,8 @@ class _PackageFormState extends ConsumerState<PackageForm> {
             duration: Duration(seconds: 3),
           ),
         );
+
+        await _checkAndFillFromArchive();
       }
     } catch (e) {
       debugPrint('Error during OCR processing: $e');
@@ -385,6 +528,58 @@ class _PackageFormState extends ConsumerState<PackageForm> {
       }
     }
   }
+
+  Future<void> _checkAndFillFromArchive() async {
+    final name = _nameController.text.trim();
+    final phone = _phoneController.text.trim();
+    if (name.isEmpty && phone.isEmpty) return;
+
+    try {
+      final archiveMap = await DbHelper.instance.lookupReceiverArchive(
+        name.isNotEmpty ? name : null,
+        phone.isNotEmpty ? phone : null,
+      );
+
+      if (archiveMap != null && mounted) {
+        final archiveName = archiveMap['name'] as String;
+        final archiveStreet = archiveMap['street'] as String?;
+        final archiveZone = archiveMap['zone'] as String?;
+        final archiveBarangay = archiveMap['barangay'] as String?;
+        final archiveCity = archiveMap['city'] as String?;
+        final archiveLat = archiveMap['lat'] as double?;
+        final archiveLng = archiveMap['lng'] as double?;
+
+        setState(() {
+          if (_lat == null && _lng == null) {
+            _lat = archiveLat;
+            _lng = archiveLng;
+          }
+          if (_streetController.text.trim().isEmpty && archiveStreet != null) {
+            _streetController.text = archiveStreet;
+          }
+          if (_zoneController.text.trim().isEmpty && archiveZone != null) {
+            _zoneController.text = archiveZone;
+          }
+          if (_barangayController.text.trim().isEmpty && archiveBarangay != null) {
+            _barangayController.text = archiveBarangay;
+          }
+          if ((_cityController.text.trim().isEmpty || _cityController.text.trim() == 'Claveria') && archiveCity != null) {
+            _cityController.text = archiveCity;
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Auto-pinned location and address from archive for $archiveName.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error looking up receiver archive: $e');
+    }
+  }
+
 
   double _getGrandTotal() {
     final cash = double.tryParse(_codCashController.text) ?? 0.0;
@@ -561,6 +756,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
               decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
               child: TextFormField(
                 controller: _nameController,
+                focusNode: _nameFocusNode,
                 decoration: const InputDecoration(
                   labelText: 'Receiver Name',
                   hintText: 'e.g. John Doe',
@@ -572,6 +768,7 @@ class _PackageFormState extends ConsumerState<PackageForm> {
               decoration: BoxDecoration(borderRadius: BorderRadius.zero, boxShadow: [AppShadows.offsetSm(tokens.shadowColor)]),
               child: TextFormField(
                 controller: _phoneController,
+                focusNode: _phoneFocusNode,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
                   labelText: 'Receiver Phone',

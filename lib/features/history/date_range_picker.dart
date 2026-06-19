@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/tokens.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
 
 
@@ -462,7 +463,8 @@ class _DateRangePickerState extends State<DateRangePicker> {
                     onPressed: () => Navigator.pop(context),
                     child: Text(
                       'Cancel',
-                      style: TextStyle(color: tokens.textSubtle),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppStatusColors.error),
                     ),
                   ),
                   const SizedBox(width: 8),

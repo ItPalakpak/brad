@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:uuid/uuid.dart';
+import 'package:latlong2/latlong.dart';
 
 // --- MODELS ---
 
@@ -305,6 +308,105 @@ class PaymentSummary {
   }
 }
 
+class ReceiverArchive {
+  final String id;
+  final String name;
+  final String? phone;
+  final String? street;
+  final String? zone;
+  final String? barangay;
+  final String? city;
+  final double lat;
+  final double lng;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  ReceiverArchive({
+    required this.id,
+    required this.name,
+    this.phone,
+    this.street,
+    this.zone,
+    this.barangay,
+    this.city,
+    required this.lat,
+    required this.lng,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory ReceiverArchive.fromMap(Map<String, dynamic> map) {
+    return ReceiverArchive(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      phone: map['phone'] as String?,
+      street: map['street'] as String?,
+      zone: map['zone'] as String?,
+      barangay: map['barangay'] as String?,
+      city: map['city'] as String?,
+      lat: (map['lat'] as num).toDouble(),
+      lng: (map['lng'] as num).toDouble(),
+      createdAt: DateTime.parse(map['created_at'] as String),
+      updatedAt: DateTime.parse(map['updated_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'phone': phone,
+      'street': street,
+      'zone': zone,
+      'barangay': barangay,
+      'city': city,
+      'lat': lat,
+      'lng': lng,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+    };
+  }
+}
+
+class CustomPerimeter {
+  final String id;
+  final String name;
+  final List<LatLng> points;
+  final DateTime createdAt;
+
+  CustomPerimeter({
+    required this.id,
+    required this.name,
+    required this.points,
+    required this.createdAt,
+  });
+
+  factory CustomPerimeter.fromMap(Map<String, dynamic> map) {
+    final pointsJson = jsonDecode(map['points'] as String) as List<dynamic>;
+    final points = pointsJson.map((p) {
+      final list = p as List<dynamic>;
+      return LatLng((list[0] as num).toDouble(), (list[1] as num).toDouble());
+    }).toList();
+
+    return CustomPerimeter(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      points: points,
+      createdAt: DateTime.parse(map['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    final pointsJson = points.map((p) => [p.latitude, p.longitude]).toList();
+    return {
+      'id': id,
+      'name': name,
+      'points': jsonEncode(pointsJson),
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
 // --- DATABASE HELPER ---
 
 class DbHelper {
@@ -324,7 +426,7 @@ class DbHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 5,
+      version: 7,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -404,6 +506,93 @@ class DbHelper {
         await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
       } catch (_) {}
     }
+    if (oldVersion < 6) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS receiver_archives (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            phone TEXT,
+            street TEXT,
+            zone TEXT,
+            barangay TEXT,
+            city TEXT,
+            lat REAL NOT NULL,
+            lng REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_receiver_archives_phone ON receiver_archives(phone);');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_receiver_archives_name ON receiver_archives(name);');
+      } catch (_) {}
+
+      // Migrate existing packages with coordinates
+      try {
+        final List<Map<String, dynamic>> packages = await db.query(
+          'packages',
+          where: 'lat IS NOT NULL AND lng IS NOT NULL AND receiver_name IS NOT NULL AND receiver_name != ""',
+        );
+        final now = DateTime.now().toIso8601String();
+        for (final pkg in packages) {
+          final name = pkg['receiver_name'] as String;
+          final phone = pkg['receiver_phone'] as String?;
+          final street = pkg['street'] as String?;
+          final zone = pkg['zone'] as String?;
+          final barangay = pkg['barangay'] as String?;
+          final city = pkg['city'] as String?;
+          final lat = pkg['lat'] as double;
+          final lng = pkg['lng'] as double;
+
+          List<Map<String, dynamic>> existing;
+          if (phone != null && phone.trim().isNotEmpty) {
+            existing = await db.query(
+              'receiver_archives',
+              where: 'phone = ?',
+              whereArgs: [phone.trim()],
+            );
+          } else {
+            existing = await db.query(
+              'receiver_archives',
+              where: 'name = ?',
+              whereArgs: [name.trim()],
+            );
+          }
+
+          if (existing.isEmpty) {
+            await db.insert('receiver_archives', {
+              'id': pkg['id'] as String,
+              'name': name.trim(),
+              'phone': phone?.trim(),
+              'street': street?.trim(),
+              'zone': zone?.trim(),
+              'barangay': barangay?.trim(),
+              'city': city?.trim(),
+              'lat': lat,
+              'lng': lng,
+              'created_at': now,
+              'updated_at': now,
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    if (oldVersion < 7) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS custom_perimeters (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            points TEXT NOT NULL,
+            created_at TEXT NOT NULL
+          )
+        ''');
+      } catch (_) {}
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -475,6 +664,33 @@ class DbHelper {
     ''');
     await db.execute('CREATE INDEX idx_rides_date ON rides(date);');
     await db.execute('CREATE INDEX idx_packages_ride_id ON packages(ride_id);');
+
+    await db.execute('''
+      CREATE TABLE receiver_archives (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT,
+        street TEXT,
+        zone TEXT,
+        barangay TEXT,
+        city TEXT,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_receiver_archives_phone ON receiver_archives(phone);');
+    await db.execute('CREATE INDEX idx_receiver_archives_name ON receiver_archives(name);');
+
+    await db.execute('''
+      CREATE TABLE custom_perimeters (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        points TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   // --- CRUD PACKAGES ---
@@ -591,18 +807,48 @@ class DbHelper {
     final newSortOrder = maxOrder + 1;
 
     final p = package.copyWith(sortOrder: newSortOrder);
-    return await db.insert('packages', p.toMap(), conflictAlgorithm: ConflictAlgorithm.fail);
+    final result = await db.insert('packages', p.toMap(), conflictAlgorithm: ConflictAlgorithm.fail);
+
+    if (p.lat != null && p.lng != null && p.receiverName != null && p.receiverName!.trim().isNotEmpty) {
+      await upsertReceiverArchive(
+        name: p.receiverName!,
+        phone: p.receiverPhone,
+        street: p.street,
+        zone: p.zone,
+        barangay: p.barangay,
+        city: p.city,
+        lat: p.lat!,
+        lng: p.lng!,
+      );
+    }
+
+    return result;
   }
 
   Future<int> updatePackage(Package package) async {
     final db = await database;
     final p = package.copyWith(updatedAt: DateTime.now());
-    return await db.update(
+    final result = await db.update(
       'packages',
       p.toMap(),
       where: 'id = ?',
       whereArgs: [package.id],
     );
+
+    if (p.lat != null && p.lng != null && p.receiverName != null && p.receiverName!.trim().isNotEmpty) {
+      await upsertReceiverArchive(
+        name: p.receiverName!,
+        phone: p.receiverPhone,
+        street: p.street,
+        zone: p.zone,
+        barangay: p.barangay,
+        city: p.city,
+        lat: p.lat!,
+        lng: p.lng!,
+      );
+    }
+
+    return result;
   }
 
   Future<int> deletePackage(String id) async {
@@ -692,6 +938,126 @@ class DbHelper {
       orderBy: 'attempted_at DESC',
     );
     return result.map((map) => DeliveryAttempt.fromMap(map)).toList();
+  }
+
+  // --- CRUD RECEIVER ARCHIVES ---
+
+  Future<void> upsertReceiverArchive({
+    required String name,
+    String? phone,
+    String? street,
+    String? zone,
+    String? barangay,
+    String? city,
+    required double lat,
+    required double lng,
+  }) async {
+    if (name.trim().isEmpty) return;
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+
+    List<Map<String, dynamic>> existing;
+    if (phone != null && phone.trim().isNotEmpty) {
+      existing = await db.query(
+        'receiver_archives',
+        where: 'phone = ?',
+        whereArgs: [phone.trim()],
+      );
+    } else {
+      existing = await db.query(
+        'receiver_archives',
+        where: 'name = ?',
+        whereArgs: [name.trim()],
+      );
+    }
+
+    if (existing.isNotEmpty) {
+      final existingId = existing.first['id'] as String;
+      await db.update(
+        'receiver_archives',
+        {
+          'name': name.trim(),
+          'phone': phone?.trim(),
+          'street': street?.trim(),
+          'zone': zone?.trim(),
+          'barangay': barangay?.trim(),
+          'city': city?.trim(),
+          'lat': lat,
+          'lng': lng,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [existingId],
+      );
+    } else {
+      await db.insert(
+        'receiver_archives',
+        {
+          'id': const Uuid().v4(),
+          'name': name.trim(),
+          'phone': phone?.trim(),
+          'street': street?.trim(),
+          'zone': zone?.trim(),
+          'barangay': barangay?.trim(),
+          'city': city?.trim(),
+          'lat': lat,
+          'lng': lng,
+          'created_at': now,
+          'updated_at': now,
+        },
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>?> lookupReceiverArchive(String? name, String? phone) async {
+    final db = await database;
+    if (phone != null && phone.trim().isNotEmpty) {
+      final result = await db.query(
+        'receiver_archives',
+        where: 'phone = ?',
+        whereArgs: [phone.trim()],
+        limit: 1,
+      );
+      if (result.isNotEmpty) return result.first;
+    }
+    if (name != null && name.trim().isNotEmpty) {
+      final result = await db.query(
+        'receiver_archives',
+        where: 'LOWER(name) = ?',
+        whereArgs: [name.trim().toLowerCase()],
+        limit: 1,
+      );
+      if (result.isNotEmpty) return result.first;
+    }
+    return null;
+  }
+
+  Future<List<ReceiverArchive>> getAllReceiverArchives() async {
+    final db = await database;
+    final result = await db.query('receiver_archives');
+    return result.map((map) => ReceiverArchive.fromMap(map)).toList();
+  }
+
+  // --- CRUD CUSTOM PERIMETERS ---
+
+  Future<int> insertPerimeter(CustomPerimeter perimeter) async {
+    final db = await database;
+    return await db.insert('custom_perimeters', perimeter.toMap());
+  }
+
+  Future<List<CustomPerimeter>> getAllPerimeters() async {
+    final db = await database;
+    final result = await db.query('custom_perimeters', orderBy: 'created_at DESC');
+    return result.map((map) => CustomPerimeter.fromMap(map)).toList();
+  }
+
+  Future<int> deletePerimeter(String id) async {
+    final db = await database;
+    return await db.delete(
+      'custom_perimeters',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // --- SETTINGS KEY-VALUE ---

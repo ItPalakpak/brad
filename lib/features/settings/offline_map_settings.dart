@@ -130,7 +130,8 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: const Text('CANCEL'),
+                    style: TextButton.styleFrom(foregroundColor: AppStatusColors.error),
+                    child: const Text('CANCEL', textAlign: TextAlign.center),
                   ),
                   const SizedBox(width: 8),
                   OffsetShadowButton.elevated(

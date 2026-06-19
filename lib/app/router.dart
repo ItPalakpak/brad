@@ -7,6 +7,7 @@ import '../features/packages/package_detail_screen.dart';
 import '../features/map/map_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/history/history_screen.dart';
+import '../features/history/history_map_screen.dart';
 import '../core/theme/app_theme.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -68,6 +69,13 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/history',
               builder: (context, state) => const HistoryScreen(),
+              routes: [
+                GoRoute(
+                  path: 'map',
+                  parentNavigatorKey: rootNavigatorKey,
+                  builder: (context, state) => const HistoryMapScreen(),
+                ),
+              ],
             ),
           ],
         ),

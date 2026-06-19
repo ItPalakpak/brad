@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../packages/packages_provider.dart';
 import '../../core/database/db_helper.dart';
@@ -19,6 +20,10 @@ class MapState {
   final double? roadDistance;
   final int? roadEta;
   final Package? nearestPackage;
+  final List<ReceiverArchive> archives;
+  final bool showArchives;
+  final List<CustomPerimeter> perimeters;
+  final bool showPerimeters;
 
   MapState({
     required this.markers,
@@ -27,6 +32,10 @@ class MapState {
     this.roadDistance,
     this.roadEta,
     this.nearestPackage,
+    this.archives = const [],
+    this.showArchives = false,
+    this.perimeters = const [],
+    this.showPerimeters = false,
   });
 }
 
@@ -46,6 +55,10 @@ class MapRoute {
 class MapStateNotifier extends _$MapStateNotifier {
   LatLng? _userPosition;
   bool _isFetchingRoute = false;
+  bool _showArchives = false;
+  List<ReceiverArchive> _archives = const [];
+  bool _showPerimeters = false;
+  List<CustomPerimeter> _perimeters = const [];
 
   @override
   MapState build() {
@@ -56,6 +69,56 @@ class MapStateNotifier extends _$MapStateNotifier {
     final userPos = _userPosition;
     if (userPos != null && nearest != null) {
       Future.microtask(() => _updateRoadRoute(userPos, nearest));
+    }
+
+    if (_showArchives) {
+      Future.microtask(() async {
+        try {
+          final loaded = await DbHelper.instance.getAllReceiverArchives();
+          _archives = loaded;
+          if (_showArchives && stateOrNull != null) {
+            state = MapState(
+              markers: state.markers,
+              userPosition: _userPosition,
+              routePoints: state.routePoints,
+              roadDistance: state.roadDistance,
+              roadEta: state.roadEta,
+              nearestPackage: state.nearestPackage,
+              archives: _archives,
+              showArchives: _showArchives,
+              perimeters: _perimeters,
+              showPerimeters: _showPerimeters,
+            );
+          }
+        } catch (e) {
+          debugPrint('Error reloading receiver archives: $e');
+        }
+      });
+    }
+
+    if (_showPerimeters) {
+      Future.microtask(() async {
+        try {
+          final loaded = await DbHelper.instance.getAllPerimeters();
+          _perimeters = loaded;
+          if (_showPerimeters && stateOrNull != null) {
+            state = MapState(
+              markers: state.markers,
+              userPosition: _userPosition,
+              routePoints: state.routePoints,
+              roadDistance: state.roadDistance,
+              roadEta: state.roadEta,
+              nearestPackage: state.nearestPackage,
+              archives: _archives,
+              showArchives: _showArchives,
+              perimeters: _perimeters,
+              showPerimeters: _showPerimeters,
+            );
+          }
+        } catch (e) {
+          debugPrint('Error reloading custom perimeters: $e');
+        }
+      });
     }
 
     // Preserve previous route points and distance if the nearest package is unchanged
@@ -72,6 +135,10 @@ class MapStateNotifier extends _$MapStateNotifier {
       roadDistance: roadDistance,
       roadEta: roadEta,
       nearestPackage: nearest,
+      archives: _archives,
+      showArchives: _showArchives,
+      perimeters: _perimeters,
+      showPerimeters: _showPerimeters,
     );
   }
 
@@ -97,6 +164,10 @@ class MapStateNotifier extends _$MapStateNotifier {
       roadDistance: roadDistance,
       roadEta: roadEta,
       nearestPackage: nearest,
+      archives: _archives,
+      showArchives: _showArchives,
+      perimeters: _perimeters,
+      showPerimeters: _showPerimeters,
     );
     
     if (nearest != null) {
@@ -202,6 +273,10 @@ class MapStateNotifier extends _$MapStateNotifier {
         roadDistance: roadRoute.distance,
         roadEta: roadRoute.durationMinutes,
         nearestPackage: nearestPkg,
+        archives: _archives,
+        showArchives: _showArchives,
+        perimeters: _perimeters,
+        showPerimeters: _showPerimeters,
       );
     } else {
       // Fallback to straight-line distance if API fails/offline
@@ -213,7 +288,119 @@ class MapStateNotifier extends _$MapStateNotifier {
         roadDistance: dist,
         roadEta: (dist / 500.0).round(), // 30 km/h fallback
         nearestPackage: nearestPkg,
+        archives: _archives,
+        showArchives: _showArchives,
+        perimeters: _perimeters,
+        showPerimeters: _showPerimeters,
       );
+    }
+  }
+
+  void toggleArchives() async {
+    _showArchives = !_showArchives;
+    if (_showArchives) {
+      try {
+        _archives = await DbHelper.instance.getAllReceiverArchives();
+      } catch (e) {
+        debugPrint('Error loading receiver archives: $e');
+      }
+    } else {
+      _archives = const [];
+    }
+
+    state = MapState(
+      markers: state.markers,
+      userPosition: _userPosition,
+      routePoints: state.routePoints,
+      roadDistance: state.roadDistance,
+      roadEta: state.roadEta,
+      nearestPackage: state.nearestPackage,
+      archives: _archives,
+      showArchives: _showArchives,
+      perimeters: _perimeters,
+      showPerimeters: _showPerimeters,
+    );
+  }
+
+  void togglePerimeters() async {
+    _showPerimeters = !_showPerimeters;
+    if (_showPerimeters) {
+      try {
+        _perimeters = await DbHelper.instance.getAllPerimeters();
+      } catch (e) {
+        debugPrint('Error loading custom perimeters: $e');
+      }
+    } else {
+      _perimeters = const [];
+    }
+
+    state = MapState(
+      markers: state.markers,
+      userPosition: _userPosition,
+      routePoints: state.routePoints,
+      roadDistance: state.roadDistance,
+      roadEta: state.roadEta,
+      nearestPackage: state.nearestPackage,
+      archives: _archives,
+      showArchives: _showArchives,
+      perimeters: _perimeters,
+      showPerimeters: _showPerimeters,
+    );
+  }
+
+  Future<void> addPerimeter(String name, List<LatLng> points) async {
+    final perimeter = CustomPerimeter(
+      id: const Uuid().v4(),
+      name: name,
+      points: points,
+      createdAt: DateTime.now(),
+    );
+    try {
+      await DbHelper.instance.insertPerimeter(perimeter);
+      if (_showPerimeters) {
+        _perimeters = await DbHelper.instance.getAllPerimeters();
+      }
+      
+      state = MapState(
+        markers: state.markers,
+        userPosition: _userPosition,
+        routePoints: state.routePoints,
+        roadDistance: state.roadDistance,
+        roadEta: state.roadEta,
+        nearestPackage: state.nearestPackage,
+        archives: _archives,
+        showArchives: _showArchives,
+        perimeters: _perimeters,
+        showPerimeters: _showPerimeters,
+      );
+    } catch (e) {
+      debugPrint('Error saving custom perimeter: $e');
+    }
+  }
+
+  Future<void> deletePerimeter(String id) async {
+    try {
+      await DbHelper.instance.deletePerimeter(id);
+      if (_showPerimeters) {
+        _perimeters = await DbHelper.instance.getAllPerimeters();
+      } else {
+        _perimeters = const [];
+      }
+
+      state = MapState(
+        markers: state.markers,
+        userPosition: _userPosition,
+        routePoints: state.routePoints,
+        roadDistance: state.roadDistance,
+        roadEta: state.roadEta,
+        nearestPackage: state.nearestPackage,
+        archives: _archives,
+        showArchives: _showArchives,
+        perimeters: _perimeters,
+        showPerimeters: _showPerimeters,
+      );
+    } catch (e) {
+      debugPrint('Error deleting custom perimeter: $e');
     }
   }
 

@@ -190,7 +190,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   Navigator.pop(context);
                   _controller.start();
                 },
-                child: const Text('CANCEL'),
+                foregroundColor: AppStatusColors.error,
+                child: const Text('CANCEL', textAlign: TextAlign.center),
               ),
             ],
           ),
