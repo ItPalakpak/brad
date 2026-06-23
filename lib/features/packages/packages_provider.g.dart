@@ -6,7 +6,26 @@ part of 'packages_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$packagesNotifierHash() => r'd4b86bd98173ab56a0b46c2ae759612607b1fbf3';
+String _$activeRideLocationHash() =>
+    r'd4f0e1c2ff2d6a3f50a69701e9da03a5af2f3b76';
+
+/// See also [activeRideLocation].
+@ProviderFor(activeRideLocation)
+final activeRideLocationProvider =
+    AutoDisposeProvider<AsyncValue<Position>?>.internal(
+      activeRideLocation,
+      name: r'activeRideLocationProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$activeRideLocationHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ActiveRideLocationRef = AutoDisposeProviderRef<AsyncValue<Position>?>;
+String _$packagesNotifierHash() => r'72ead1bf65d6a71fa3a2fda6747905eb0fef9d65';
 
 /// See also [PackagesNotifier].
 @ProviderFor(PackagesNotifier)

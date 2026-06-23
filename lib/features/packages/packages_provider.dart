@@ -1,14 +1,17 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/foundation.dart';
-
+import 'package:geolocator/geolocator.dart';
 
 import '../../core/database/db_helper.dart';
 import '../../core/services/geofence_manager.dart';
+import '../../core/services/location_service.dart';
 
 part 'packages_provider.g.dart';
 
@@ -85,11 +88,33 @@ class PackagesState {
 }
 
 @riverpod
+AsyncValue<Position>? activeRideLocation(Ref ref) {
+  final activeRide = ref.watch(packagesNotifierProvider.select((s) => s.activeRide));
+  if (activeRide == null) return null;
+  return ref.watch(locationStreamProvider);
+}
+
+@riverpod
 class PackagesNotifier extends _$PackagesNotifier {
   final DbHelper _dbHelper = DbHelper.instance;
 
   @override
   PackagesState build() {
+    ref.listen<AsyncValue<Position>?>(activeRideLocationProvider, (prev, next) {
+      if (next != null) {
+        next.whenData((pos) async {
+          final active = state.activeRide;
+          if (active != null) {
+            await _dbHelper.insertRideLocation(
+              active.id,
+              pos.latitude,
+              pos.longitude,
+            );
+          }
+        });
+      }
+    });
+
     // Start initial loading
     Future.microtask(() => refresh());
     return PackagesState(

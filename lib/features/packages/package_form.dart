@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -338,7 +339,41 @@ class PackageFormState extends ConsumerState<PackageForm> {
         final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
         await textRecognizer.close();
 
-        final text = recognizedText.text;
+        final List<TextLine> rawLines = [];
+        for (final block in recognizedText.blocks) {
+          rawLines.addAll(block.lines);
+        }
+
+        // Filter out diagonal lines (e.g. watermarked texts or rotated lines)
+        final List<TextLine> horizontalLines = rawLines.where((line) {
+          if (line.cornerPoints.length < 2) return true;
+          final p1 = line.cornerPoints[0];
+          final p2 = line.cornerPoints[1];
+          final dx = p2.x - p1.x;
+          final dy = p2.y - p1.y;
+          final angleDeg = (atan2(dy.toDouble(), dx.toDouble()) * 180 / pi).abs();
+          // If rotation angle is between 15 and 165 degrees, it's diagonal/vertical, so we filter it out
+          return !(angleDeg > 15 && angleDeg < 165);
+        }).toList();
+
+        // Sort lines vertically from top to bottom
+        horizontalLines.sort((a, b) => a.boundingBox.top.compareTo(b.boundingBox.top));
+
+        // Find the first line containing 'sender' (case insensitive)
+        int senderIndex = -1;
+        for (int i = 0; i < horizontalLines.length; i++) {
+          if (horizontalLines[i].text.toLowerCase().contains('sender')) {
+            senderIndex = i;
+            break;
+          }
+        }
+
+        // Exclude the sender line and any lines below/after it
+        final List<TextLine> filteredLines = senderIndex != -1
+            ? horizontalLines.sublist(0, senderIndex)
+            : horizontalLines;
+
+        final String text = filteredLines.map((l) => l.text).join('\n');
         if (text.isEmpty) continue;
 
         // 1. Phone parsing: match (09|\+63|63)\d{9} or \d{4}[- ]\d{3}[- ]\d{4}
@@ -359,26 +394,105 @@ class PackageFormState extends ConsumerState<PackageForm> {
         }
 
         // 2. COD amount parsing:
-        // Search for keywords COD, Cash on Delivery, Collect, PHP, ₱ followed by numbers
-        if (parsedCodAmount == null || parsedCodAmount == 0.0) {
-          final codRegex = RegExp(
-            r'\b(?:cod|collect|collectable|amount|php|₱)\b\s*[:=-]?\s*(?:php|₱)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+        // CHANGED: Multi-tiered COD amount parsing utilizing spatial bounding box vertical alignment coordinates
+        // to associate the 'COD' label with its matching value column, avoiding 'COD Fee' or 'COD Transfer Fee' matches.
+        double? extractedCod;
+        final List<TextLine> allLines = filteredLines;
+
+        // Find the main "COD" label line (contains "cod", but excludes "fee" or "transfer")
+        TextLine? codLine;
+        for (final line in allLines) {
+          final txt = line.text.toLowerCase();
+          if (txt.contains('cod') && !txt.contains('fee') && !txt.contains('transfer')) {
+            codLine = line;
+            break;
+          }
+        }
+
+        if (codLine != null) {
+          // Tier 1: Check if the COD line itself contains the value (e.g. "COD 2,590.00")
+          final codSameLineRegex = RegExp(
+            r'\bcod\b(?!\s*fee)(?!\s*transfer)\s*[:=-]?\s*(?:php|₱)?\s*([0-9,]+\.[0-9]{2})\b',
             caseSensitive: false,
           );
-          final codMatches = codRegex.allMatches(text);
+          final match = codSameLineRegex.firstMatch(codLine.text);
+          if (match != null) {
+            final amtStr = match.group(1)?.replaceAll(',', '');
+            if (amtStr != null) {
+              final parsed = double.tryParse(amtStr);
+              if (parsed != null) {
+                extractedCod = parsed;
+              }
+            }
+          }
+
+          // Tier 2: Check for a matching decimal value line on the same visual row (Y-axis alignment)
+          if (extractedCod == null) {
+            final codRect = codLine.boundingBox;
+            final codCenterY = codRect.center.dy;
+            final codHeight = codRect.height;
+            double? bestMatchValue;
+            double bestDistance = double.infinity;
+
+            for (final line in allLines) {
+              if (line == codLine) continue;
+              final lineRect = line.boundingBox;
+              final centerY = lineRect.center.dy;
+              final verticalDist = (centerY - codCenterY).abs();
+
+              // Check if Y center is within 70% of the COD label height
+              if (verticalDist < codHeight * 0.7) {
+                final cleanedText = line.text.trim();
+                final priceRegex = RegExp(
+                  r'^\s*(?:php|₱)?\s*([0-9,]+\.[0-9]{1,2})\s*$',
+                  caseSensitive: false,
+                );
+                final match = priceRegex.firstMatch(cleanedText);
+                if (match != null) {
+                  final amtStr = match.group(1)?.replaceAll(',', '');
+                  if (amtStr != null) {
+                    final parsed = double.tryParse(amtStr);
+                    if (parsed != null) {
+                      if (verticalDist < bestDistance) {
+                        bestDistance = verticalDist;
+                        bestMatchValue = parsed;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            if (bestMatchValue != null) {
+              extractedCod = bestMatchValue;
+            }
+          }
+        }
+
+        // Tier 3: Fallback general keyword search on the entire text string
+        if (extractedCod == null) {
+          final codGeneralRegex = RegExp(
+            r'\b(?:cod|collect|collectable)\b\s*[:=-]?\s*(?:php|₱)?\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+            caseSensitive: false,
+          );
+          final codMatches = codGeneralRegex.allMatches(text);
           for (final match in codMatches) {
             final amtStr = match.group(1)?.replaceAll(',', '');
             if (amtStr != null) {
               final parsed = double.tryParse(amtStr);
-              if (parsed != null && parsed > 0) {
-                parsedCodAmount = parsed;
+              if (parsed != null) {
+                extractedCod = parsed;
                 break;
               }
             }
           }
         }
 
+        if (extractedCod != null) {
+          parsedCodAmount = extractedCod;
+        }
+
         // 3. Name parsing: lines starting with or containing "To:", "Consignee:", "Receiver:", "Name:"
+        // CHANGED: Strip phone/contact numbers from the receiver name candidate to ensure only the name is auto-populated.
         if (parsedName == null || parsedName.isEmpty) {
           final lines = text.split('\n');
           final namePrefixRegex = RegExp(
@@ -390,8 +504,17 @@ class PackageFormState extends ConsumerState<PackageForm> {
             if (match != null) {
               final candidate = match.group(1)?.trim();
               if (candidate != null && candidate.isNotEmpty && candidate.length > 2) {
-                parsedName = candidate;
-                break;
+                var cleanedName = candidate;
+                final phoneStripRegex = RegExp(
+                  r'\b(?:09|\+639|639)\d{9}\b|\b\d{4}[- ]?\d{3}[- ]?\d{4}\b|\b\d{9,12}\b',
+                  caseSensitive: false,
+                );
+                cleanedName = cleanedName.replaceAll(phoneStripRegex, '').trim();
+                cleanedName = cleanedName.replaceAll(RegExp(r'^[,\s\-]+|[,\s\-]+$'), '').trim();
+                if (cleanedName.isNotEmpty) {
+                  parsedName = cleanedName;
+                  break;
+                }
               }
             }
           }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -52,10 +53,24 @@ Stream<Position> locationStream(Ref ref) async* {
   if (!hasPerm) {
     throw Exception('Location permission not granted');
   }
-  yield* Geolocator.getPositionStream(
-    locationSettings: const LocationSettings(
+  final LocationSettings locationSettings;
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    locationSettings = AndroidSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 5, // update every 5 meters
-    ),
-  );
+      distanceFilter: 5,
+      intervalDuration: const Duration(seconds: 5),
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationText: "BRAD is tracking your ride route",
+        notificationTitle: "Ride Tracking Active",
+        enableWakeLock: true,
+      ),
+    );
+  } else {
+    locationSettings = const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5,
+    );
+  }
+
+  yield* Geolocator.getPositionStream(locationSettings: locationSettings);
 }

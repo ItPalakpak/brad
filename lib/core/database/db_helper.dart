@@ -426,7 +426,7 @@ class DbHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -593,6 +593,22 @@ class DbHelper {
         ''');
       } catch (_) {}
     }
+    if (oldVersion < 8) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS ride_locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+            lat REAL NOT NULL,
+            lng REAL NOT NULL,
+            timestamp TEXT NOT NULL
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_ride_locations_ride_id ON ride_locations(ride_id);');
+      } catch (_) {}
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -691,6 +707,17 @@ class DbHelper {
         created_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE ride_locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        timestamp TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_ride_locations_ride_id ON ride_locations(ride_id);');
   }
 
   // --- CRUD PACKAGES ---
@@ -1673,5 +1700,29 @@ class DbHelper {
         }
       }
     });
+  }
+
+  // CHANGED: Added helper to insert a location trace point for a ride (Strava-style tracking)
+  Future<int> insertRideLocation(String rideId, double lat, double lng) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    return await db.insert('ride_locations', {
+      'ride_id': rideId,
+      'lat': lat,
+      'lng': lng,
+      'timestamp': now,
+    });
+  }
+
+  // CHANGED: Added helper to fetch all recorded location trace points for a ride (Strava-style tracking)
+  Future<List<LatLng>> getRideLocations(String rideId) async {
+    final db = await database;
+    final result = await db.query(
+      'ride_locations',
+      where: 'ride_id = ?',
+      whereArgs: [rideId],
+      orderBy: 'timestamp ASC',
+    );
+    return result.map((r) => LatLng(r['lat'] as double, r['lng'] as double)).toList();
   }
 }

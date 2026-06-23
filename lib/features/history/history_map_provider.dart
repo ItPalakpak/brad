@@ -112,21 +112,26 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
       // Query packages for this ride
       final packages = await _dbHelper.getPackagesForRide(ride.id);
 
-      // Filter packages with coords and sort them chronologically by delivered_at
-      final sortedPackages = packages.where((p) => p.lat != null && p.lng != null).toList();
-      sortedPackages.sort((a, b) {
-        if (a.deliveredAt != null && b.deliveredAt != null) {
-          return a.deliveredAt!.compareTo(b.deliveredAt!);
-        } else if (a.deliveredAt != null) {
-          return -1; // delivered first
-        } else if (b.deliveredAt != null) {
-          return 1;
-        } else {
-          return a.sortOrder.compareTo(b.sortOrder);
-        }
-      });
+      // CHANGED: Load actual tracked GPS coordinates first (Strava style tracking)
+      List<LatLng> points = await _dbHelper.getRideLocations(ride.id);
 
-      final points = sortedPackages.map((p) => LatLng(p.lat!, p.lng!)).toList();
+      // Fallback: If no location coordinates were recorded (e.g. for mock/seeded data),
+      // connect package coordinates in delivery sequence.
+      if (points.isEmpty) {
+        final sortedPackages = packages.where((p) => p.lat != null && p.lng != null).toList();
+        sortedPackages.sort((a, b) {
+          if (a.deliveredAt != null && b.deliveredAt != null) {
+            return a.deliveredAt!.compareTo(b.deliveredAt!);
+          } else if (a.deliveredAt != null) {
+            return -1; // delivered first
+          } else if (b.deliveredAt != null) {
+            return 1;
+          } else {
+            return a.sortOrder.compareTo(b.sortOrder);
+          }
+        });
+        points = sortedPackages.map((p) => LatLng(p.lat!, p.lng!)).toList();
+      }
 
       // Duration calculation
       Duration duration = Duration.zero;
