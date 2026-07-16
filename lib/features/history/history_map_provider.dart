@@ -8,6 +8,21 @@ import '../../core/database/db_helper.dart';
 
 part 'history_map_provider.g.dart';
 
+// CHANGED: Added DeliveryTraceStats to store distance, interval and timestamp for delivered packages on a ride
+class DeliveryTraceStats {
+  final String packageId;
+  final DateTime deliveredAt;
+  final double distanceMeters;
+  final Duration interval;
+
+  DeliveryTraceStats({
+    required this.packageId,
+    required this.deliveredAt,
+    required this.distanceMeters,
+    required this.interval,
+  });
+}
+
 class HistoryMapState {
   final DateTime selectedDate;
   final List<Ride> availableRides;
@@ -17,6 +32,8 @@ class HistoryMapState {
   final double distanceMeters;
   final Duration duration;
   final bool isLoading;
+  // CHANGED: Add deliveryStats map to associate delivered packages with their true route telemetry
+  final Map<String, DeliveryTraceStats> deliveryStats;
 
   HistoryMapState({
     required this.selectedDate,
@@ -27,6 +44,7 @@ class HistoryMapState {
     this.distanceMeters = 0.0,
     this.duration = Duration.zero,
     this.isLoading = false,
+    this.deliveryStats = const {},
   });
 
   HistoryMapState copyWith({
@@ -38,6 +56,7 @@ class HistoryMapState {
     double? distanceMeters,
     Duration? duration,
     bool? isLoading,
+    Map<String, DeliveryTraceStats>? deliveryStats,
   }) {
     return HistoryMapState(
       selectedDate: selectedDate ?? this.selectedDate,
@@ -48,6 +67,7 @@ class HistoryMapState {
       distanceMeters: distanceMeters ?? this.distanceMeters,
       duration: duration ?? this.duration,
       isLoading: isLoading ?? this.isLoading,
+      deliveryStats: deliveryStats ?? this.deliveryStats,
     );
   }
 }
@@ -112,8 +132,9 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
       // Query packages for this ride
       final packages = await _dbHelper.getPackagesForRide(ride.id);
 
-      // CHANGED: Load actual tracked GPS coordinates first (Strava style tracking)
-      List<LatLng> points = await _dbHelper.getRideLocations(ride.id);
+      // CHANGED: Load actual tracked GPS coordinates with timestamps for segment calculation
+      final rawLocations = await _dbHelper.getRideLocationsWithTimestamps(ride.id);
+      List<LatLng> points = rawLocations.map((r) => LatLng(r['lat'] as double, r['lng'] as double)).toList();
 
       // Fallback: If no location coordinates were recorded (e.g. for mock/seeded data),
       // connect package coordinates in delivery sequence.
@@ -131,6 +152,74 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           }
         });
         points = sortedPackages.map((p) => LatLng(p.lat!, p.lng!)).toList();
+      }
+
+      // CHANGED: Calculate time, distance, and interval telemetry for each delivered package
+      final Map<String, DeliveryTraceStats> deliveryStats = {};
+      final deliveredPkgs = packages
+          .where((p) => p.status == 'delivered' && p.deliveredAt != null)
+          .toList()
+        ..sort((a, b) => a.deliveredAt!.compareTo(b.deliveredAt!));
+
+      DateTime lastTime = ride.startedAt;
+      LatLng? lastLatLng;
+      if (points.isNotEmpty) {
+        lastLatLng = points.first;
+      }
+
+      for (int i = 0; i < deliveredPkgs.length; i++) {
+        final pkg = deliveredPkgs[i];
+        final pkgTime = pkg.deliveredAt!;
+
+        // Find location points logged between lastTime and pkgTime
+        final segmentPoints = rawLocations.where((loc) {
+          final t = DateTime.parse(loc['timestamp'] as String);
+          return t.isAfter(lastTime) && !t.isAfter(pkgTime);
+        }).toList();
+
+        double segmentDistance = 0.0;
+        LatLng? currentLatLng = lastLatLng;
+
+        for (final loc in segmentPoints) {
+          final nextPt = LatLng(loc['lat'] as double, loc['lng'] as double);
+          if (currentLatLng != null) {
+            segmentDistance += _calculateDistance(currentLatLng, nextPt);
+          }
+          currentLatLng = nextPt;
+        }
+
+        // Connect final segment to parcel location
+        if (pkg.lat != null && pkg.lng != null) {
+          final pkgPt = LatLng(pkg.lat!, pkg.lng!);
+          if (currentLatLng != null) {
+            segmentDistance += _calculateDistance(currentLatLng, pkgPt);
+          }
+          currentLatLng = pkgPt;
+        }
+
+        // Fallback: If no tracked GPS points, use straight line distance from previous parcel/start
+        if (segmentDistance == 0.0 && pkg.lat != null && pkg.lng != null) {
+          if (i > 0) {
+            final prevPkg = deliveredPkgs[i - 1];
+            if (prevPkg.lat != null && prevPkg.lng != null) {
+              segmentDistance = _calculateDistance(LatLng(prevPkg.lat!, prevPkg.lng!), LatLng(pkg.lat!, pkg.lng!));
+            }
+          } else if (lastLatLng != null) {
+            segmentDistance = _calculateDistance(lastLatLng, LatLng(pkg.lat!, pkg.lng!));
+          }
+        }
+
+        final interval = pkgTime.difference(lastTime);
+
+        deliveryStats[pkg.id] = DeliveryTraceStats(
+          packageId: pkg.id,
+          deliveredAt: pkgTime,
+          distanceMeters: segmentDistance,
+          interval: interval,
+        );
+
+        lastTime = pkgTime;
+        lastLatLng = currentLatLng;
       }
 
       // Duration calculation
@@ -151,6 +240,7 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           distanceMeters: 0.0,
           duration: duration,
           isLoading: false,
+          deliveryStats: deliveryStats,
         );
         return;
       }
@@ -167,6 +257,7 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           distanceMeters: roadRoute.distance,
           duration: duration,
           isLoading: false,
+          deliveryStats: deliveryStats,
         );
       } else {
         // Fallback: geodesic straight-line distance
@@ -183,6 +274,7 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           distanceMeters: dist,
           duration: duration,
           isLoading: false,
+          deliveryStats: deliveryStats,
         );
       }
     } catch (e) {

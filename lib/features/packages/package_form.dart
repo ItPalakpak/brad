@@ -521,16 +521,22 @@ class PackageFormState extends ConsumerState<PackageForm> {
         }
 
         // 4. Address parsing:
-        // Zone / Purok
+        // CHANGED: Standardize every zone/purok spelling to "Zone <Value>" and format sub-letters (e.g. 1-a -> 1A)
         if (parsedZone == null || parsedZone.isEmpty) {
-          final zoneRegex = RegExp(r'\b(?:zone|purok|puk|pk)\s*([0-9a-zA-Z\-]+)', caseSensitive: false);
+          final zoneRegex = RegExp(r'\b(?:zone|purok|puk|pk)\s*([0-9a-zA-Z]+(?:\s*[-]?\s*[0-9a-zA-Z]+)*)', caseSensitive: false);
           final zoneMatch = zoneRegex.firstMatch(text);
           if (zoneMatch != null) {
-            parsedZone = zoneMatch.group(0)?.trim();
+            final rawValue = zoneMatch.group(1)?.trim() ?? '';
+            final cleanedValue = rawValue.replaceAllMapped(
+              RegExp(r'(\d+)\s*[-]?\s*([a-zA-Z])\b'),
+              (match) => '${match.group(1)}${match.group(2)!.toUpperCase()}',
+            ).replaceAll(RegExp(r'\s*[-]\s*'), '').toUpperCase();
+            parsedZone = 'Zone $cleanedValue';
           }
         }
 
         // Barangay search: try to match against database or local Claveria barangays list
+        // CHANGED: Support cleaning sub-letters for Barangays too (e.g. "Poblacion 1-a" -> "Poblacion 1A")
         if (parsedBarangay == null || parsedBarangay.isEmpty) {
           final packagesState = ref.read(packagesNotifierProvider);
           final dbBarangays = packagesState.uniqueBarangays;
@@ -541,8 +547,20 @@ class PackageFormState extends ConsumerState<PackageForm> {
           ];
           final barangaysToSearch = dbBarangays.isNotEmpty ? dbBarangays : defaultBarangays;
           for (final b in barangaysToSearch) {
-            if (b.isNotEmpty && text.toLowerCase().contains(b.toLowerCase())) {
-              parsedBarangay = b;
+            final escB = RegExp.escape(b);
+            final brgyRegex = RegExp('$escB(?:\\s*[-]?\\s*([0-9a-zA-Z\\-]+))?\\b', caseSensitive: false);
+            final match = brgyRegex.firstMatch(text);
+            if (match != null) {
+              final suffix = match.group(1);
+              if (suffix != null && suffix.isNotEmpty) {
+                final cleanedSuffix = suffix.replaceAllMapped(
+                  RegExp(r'(\d+)\s*[-]?\s*([a-zA-Z])\b'),
+                  (m) => '${m.group(1)}${m.group(2)!.toUpperCase()}',
+                ).replaceAll(RegExp(r'\s*[-]\s*'), '').toUpperCase();
+                parsedBarangay = '$b $cleanedSuffix';
+              } else {
+                parsedBarangay = b;
+              }
               break;
             }
           }
@@ -697,6 +715,31 @@ class PackageFormState extends ConsumerState<PackageForm> {
             duration: const Duration(seconds: 2),
           ),
         );
+      } else if (mounted) {
+        // CHANGED: If no exact receiver archive found, look for nearby zone & barangay match as default pinning coordinates
+        final zone = _zoneController.text.trim();
+        final barangay = _barangayController.text.trim();
+        if (barangay.isNotEmpty) {
+          final nearMatches = await DbHelper.instance.findArchivesByZoneAndBarangay(
+            zone.isNotEmpty ? zone : null,
+            barangay,
+          );
+          if (nearMatches.isNotEmpty && mounted) {
+            final bestMatch = nearMatches.first;
+            setState(() {
+              if (_lat == null && _lng == null) {
+                _lat = (bestMatch['lat'] as num).toDouble();
+                _lng = (bestMatch['lng'] as num).toDouble();
+              }
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('No exact archive found. Pinned near matching ${zone.isNotEmpty ? "$zone, " : ""}$barangay.'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
       debugPrint('Error looking up receiver archive: $e');

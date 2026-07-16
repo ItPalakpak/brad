@@ -1065,6 +1065,47 @@ class DbHelper {
     return result.map((map) => ReceiverArchive.fromMap(map)).toList();
   }
 
+  // CHANGED: Added updateReceiverArchiveLocation to support updating pin coordinates of archived consignees
+  Future<void> updateReceiverArchiveLocation(String id, double lat, double lng) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.update(
+      'receiver_archives',
+      {
+        'lat': lat,
+        'lng': lng,
+        'updated_at': now,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // CHANGED: Added findArchivesByZoneAndBarangay to locate archives in the same zone & barangay, or same barangay
+  Future<List<Map<String, dynamic>>> findArchivesByZoneAndBarangay(String? zone, String? barangay) async {
+    final db = await database;
+    if (barangay == null || barangay.trim().isEmpty) return const [];
+
+    final brgyLower = barangay.trim().toLowerCase();
+
+    if (zone != null && zone.trim().isNotEmpty) {
+      final zoneLower = zone.trim().toLowerCase();
+      final results = await db.query(
+        'receiver_archives',
+        where: 'LOWER(zone) = ? AND LOWER(barangay) = ?',
+        whereArgs: [zoneLower, brgyLower],
+      );
+      if (results.isNotEmpty) return results;
+    }
+
+    return await db.query(
+      'receiver_archives',
+      where: 'LOWER(barangay) = ?',
+      whereArgs: [brgyLower],
+    );
+  }
+
+
   // --- CRUD CUSTOM PERIMETERS ---
 
   Future<int> insertPerimeter(CustomPerimeter perimeter) async {
@@ -1724,5 +1765,16 @@ class DbHelper {
       orderBy: 'timestamp ASC',
     );
     return result.map((r) => LatLng(r['lat'] as double, r['lng'] as double)).toList();
+  }
+
+  // CHANGED: Added helper to fetch all recorded location trace points with timestamps for a ride (Strava-style tracking)
+  Future<List<Map<String, dynamic>>> getRideLocationsWithTimestamps(String rideId) async {
+    final db = await database;
+    return await db.query(
+      'ride_locations',
+      where: 'ride_id = ?',
+      whereArgs: [rideId],
+      orderBy: 'timestamp ASC',
+    );
   }
 }

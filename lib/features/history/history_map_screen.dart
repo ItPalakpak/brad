@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +30,13 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
   late final MapController _mapController;
   bool _isMapReady = false;
 
+  // CHANGED: Added local playback animation state variables
+  bool _isPlaying = false;
+  double _playbackProgress = 0.0;
+  double _playbackSpeed = 1.0;
+  int _currentProgressIndex = 0;
+  Timer? _playbackTimer;
+
   @override
   void initState() {
     super.initState();
@@ -36,9 +45,91 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
 
   @override
   void dispose() {
+    _playbackTimer?.cancel();
     _mapController.dispose();
     super.dispose();
   }
+
+  // CHANGED: Added playback controls and dynamic updates
+  void _startPlayback() {
+    _playbackTimer?.cancel();
+    setState(() {
+      _isPlaying = true;
+    });
+    _tick();
+  }
+
+  void _pausePlayback() {
+    _playbackTimer?.cancel();
+    setState(() {
+      _isPlaying = false;
+    });
+  }
+
+  void _tick() {
+    final points = ref.read(historyMapNotifierProvider).routePoints;
+    if (points.isEmpty) return;
+
+    final tickMs = (100 / _playbackSpeed).round();
+    _playbackTimer = Timer(Duration(milliseconds: tickMs), () {
+      if (!mounted) return;
+      setState(() {
+        if (_currentProgressIndex < points.length - 1) {
+          _currentProgressIndex++;
+          _playbackProgress = _currentProgressIndex / (points.length - 1);
+          _tick();
+        } else {
+          _isPlaying = false;
+          _currentProgressIndex = 0;
+          _playbackProgress = 0.0;
+        }
+      });
+    });
+  }
+
+  void _seekPlayback(double value) {
+    final points = ref.read(historyMapNotifierProvider).routePoints;
+    if (points.isEmpty) return;
+
+    setState(() {
+      _playbackProgress = value;
+      _currentProgressIndex = (value * (points.length - 1)).round();
+    });
+  }
+
+  void _cyclePlaybackSpeed() {
+    setState(() {
+      if (_playbackSpeed == 1.0) {
+        _playbackSpeed = 2.0;
+      } else if (_playbackSpeed == 2.0) {
+        _playbackSpeed = 5.0;
+      } else if (_playbackSpeed == 5.0) {
+        _playbackSpeed = 10.0;
+      } else {
+        _playbackSpeed = 1.0;
+      }
+      if (_isPlaying) {
+        _startPlayback();
+      }
+    });
+  }
+
+  double _calculateRiderBearing(List<LatLng> points, int index) {
+    if (points.length < 2 || index >= points.length - 1) return 0.0;
+    final p1 = points[index];
+    final p2 = points[index + 1];
+
+    final lat1 = p1.latitude * math.pi / 180.0;
+    final lat2 = p2.latitude * math.pi / 180.0;
+    final dLon = (p2.longitude - p1.longitude) * math.pi / 180.0;
+
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
+    return math.atan2(y, x);
+  }
+
 
   void _centerOnPoints(List<LatLng> points) {
     if (!_isMapReady || points.isEmpty) return;
@@ -82,6 +173,15 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
 
     // Center map on route/package coordinates once they are loaded
     ref.listen<HistoryMapState>(historyMapNotifierProvider, (prev, next) {
+      if (prev?.selectedRide?.id != next.selectedRide?.id) {
+        _playbackTimer?.cancel();
+        setState(() {
+          _isPlaying = false;
+          _playbackProgress = 0.0;
+          _playbackSpeed = 1.0;
+          _currentProgressIndex = 0;
+        });
+      }
       if (_isMapReady && !next.isLoading && next.routePoints.isNotEmpty) {
         final prevPoints = prev?.routePoints ?? [];
         if (prevPoints.length != next.routePoints.length) {
@@ -230,6 +330,40 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
                             );
                           }).toList(),
                         ),
+
+                        // Playback Rider Marker (Animate rider's coordinates trace)
+                        if (state.routePoints.isNotEmpty && (_isPlaying || _currentProgressIndex > 0))
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: state.routePoints[_currentProgressIndex],
+                                width: 44,
+                                height: 44,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: tokens.accent,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2.0),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.25),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Transform.rotate(
+                                    angle: _calculateRiderBearing(state.routePoints, _currentProgressIndex),
+                                    child: const Icon(
+                                      Icons.navigation_rounded,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                   ),
@@ -276,7 +410,7 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                           const SizedBox(height: 12),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -305,6 +439,62 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
                               ),
                             ],
                           ),
+
+                          // CHANGED: Added route playback controls (Play/Pause, speed multiplier, interactive progress slider, and duration label)
+                          if (state.routePoints.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Divider(color: tokens.border, height: 1, thickness: 1.5),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                                  color: const Color(0xFFFC6100),
+                                  iconSize: 28,
+                                  onPressed: _isPlaying ? _pausePlayback : _startPlayback,
+                                ),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: tokens.border, width: 1.5),
+                                    borderRadius: BorderRadius.zero,
+                                  ),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: _cyclePlaybackSpeed,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        child: Text(
+                                          '${_playbackSpeed.toStringAsFixed(0)}x',
+                                          style: const TextStyle(
+                                            fontFamily: 'JetBrains Mono',
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Slider(
+                                    value: _playbackProgress.clamp(0.0, 1.0),
+                                    activeColor: const Color(0xFFFC6100),
+                                    inactiveColor: tokens.border.withValues(alpha: 0.3),
+                                    onChanged: _seekPlayback,
+                                  ),
+                                ),
+                                Text(
+                                  _formatDuration(state.duration * _playbackProgress),
+                                  style: const TextStyle(
+                                    fontFamily: 'JetBrains Mono',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -567,6 +757,7 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
 
   void _showPackageMiniCard(BuildContext context, Package package) {
     final tokens = context.tokens;
+    final state = ref.read(historyMapNotifierProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -646,6 +837,89 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
                     ),
                 ],
               ),
+
+              // CHANGED: Added Route Tracking Delivery Stats overlay for delivered packages in the history mini card
+              if (package.status == 'delivered' && state.deliveryStats.containsKey(package.id)) ...[
+                () {
+                  final stats = state.deliveryStats[package.id]!;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: tokens.accent.withValues(alpha: 0.05),
+                        border: Border.all(color: tokens.accent, width: 1.5),
+                        borderRadius: BorderRadius.zero,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'DELIVERY ROUTE STATS',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontFamily: 'JetBrains Mono',
+                              fontWeight: FontWeight.bold,
+                              color: tokens.accent,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'DELIVERED AT',
+                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    DateFormat('hh:mm:ss a').format(stats.deliveredAt),
+                                    style: TextStyle(fontSize: 12, fontFamily: 'JetBrains Mono', fontWeight: FontWeight.bold, color: tokens.text),
+                                  ),
+                                ],
+                              ),
+                              Container(width: 1.5, height: 24, color: tokens.border.withValues(alpha: 0.3)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'ROUTE DISTANCE',
+                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _formatDistance(stats.distanceMeters),
+                                    style: TextStyle(fontSize: 12, fontFamily: 'JetBrains Mono', fontWeight: FontWeight.bold, color: tokens.text),
+                                  ),
+                                ],
+                              ),
+                              Container(width: 1.5, height: 24, color: tokens.border.withValues(alpha: 0.3)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'INTERVAL TIME',
+                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _formatDuration(stats.interval),
+                                    style: TextStyle(fontSize: 12, fontFamily: 'JetBrains Mono', fontWeight: FontWeight.bold, color: tokens.text),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }(),
+              ],
+
               const SizedBox(height: 20),
               Row(
                 children: [

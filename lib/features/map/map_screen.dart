@@ -23,6 +23,7 @@ import '../../shared/utils/currency_formatter.dart';
 import '../packages/packages_provider.dart';
 import '../../core/database/db_helper.dart';
 import 'map_provider.dart';
+import 'pin_picker_sheet.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -44,17 +45,30 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   bool _isDrawMode = false;
   final List<LatLng> _drawnPoints = [];
 
+  // CHANGED: Added Search controller, focus node and search query state for archived consignee name/receiver search
+  final TextEditingController _archiveSearchController = TextEditingController();
+  final FocusNode _archiveSearchFocusNode = FocusNode();
+  String _archiveSearchQuery = '';
+
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
+    _archiveSearchController.addListener(() {
+      setState(() {
+        _archiveSearchQuery = _archiveSearchController.text;
+      });
+    });
   }
 
   @override
   void dispose() {
     _mapController.dispose();
+    _archiveSearchController.dispose();
+    _archiveSearchFocusNode.dispose();
     super.dispose();
   }
+
 
   Future<void> _centerOnMe() async {
     if (!_isMapReady) return;
@@ -301,6 +315,53 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     child: OffsetShadowButton.outlined(
                       onPressed: () => Navigator.pop(context),
                       child: const Text('CLOSE'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // CHANGED: Added CHANGE PIN button next to CLOSE in geo archiving card to allow changing the pin
+                  Expanded(
+                    child: OffsetShadowCard(
+                      backgroundColor: Colors.deepPurple,
+                      shadowColor: tokens.border,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final LatLng? newLocation = await showModalBottomSheet<LatLng>(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (context) {
+                            return PinPickerSheet(
+                              initialLocation: LatLng(archive.lat, archive.lng),
+                            );
+                          },
+                        );
+
+                        if (newLocation != null && context.mounted) {
+                          await ref.read(mapStateNotifierProvider.notifier).updateArchiveLocation(
+                            archive.id,
+                            newLocation,
+                          );
+
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Archived pin location updated for ${archive.name}.'),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      child: Center(
+                        child: Text(
+                          'CHANGE PIN',
+                          style: TextStyle(
+                            color: tokens.textInvert,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -1002,6 +1063,133 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     ),
                   ),
                 ),
+
+                // CHANGED: Added Archived Consignee Search Bar when showing archives (GEO-ARCHIVE)
+                if (mapState.showArchives)
+                  Positioned(
+                    top: 48,
+                    left: 16,
+                    right: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: tokens.surface,
+                            borderRadius: BorderRadius.zero,
+                            border: Border.all(color: tokens.border, width: 2.0),
+                            boxShadow: [AppShadows.offsetMd(tokens.shadowColor)],
+                          ),
+                          child: TextField(
+                            controller: _archiveSearchController,
+                            focusNode: _archiveSearchFocusNode,
+                            decoration: InputDecoration(
+                              hintText: 'Search archived consignee...',
+                              prefixIcon: Icon(Icons.search_rounded, color: tokens.textSubtle),
+                              filled: true,
+                              fillColor: tokens.inputBg,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              suffixIcon: _archiveSearchQuery.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear_rounded),
+                                      onPressed: () {
+                                        _archiveSearchController.clear();
+                                        _archiveSearchFocusNode.unfocus();
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        if (_archiveSearchQuery.trim().isNotEmpty && _archiveSearchFocusNode.hasFocus) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 200),
+                            decoration: BoxDecoration(
+                              color: tokens.surface,
+                              borderRadius: BorderRadius.zero,
+                              border: Border.all(color: tokens.border, width: 2.0),
+                              boxShadow: [AppShadows.offsetSm(tokens.shadowColor)],
+                            ),
+                            child: () {
+                              final query = _archiveSearchQuery.trim().toLowerCase();
+                              final matches = mapState.archives.where((archive) {
+                                return archive.name.toLowerCase().contains(query) ||
+                                    (archive.phone != null && archive.phone!.contains(query));
+                              }).toList();
+
+                              if (matches.isEmpty) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Text(
+                                    'No matching consignees found',
+                                    style: TextStyle(color: tokens.textSubtle, fontSize: 13),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                );
+                              }
+
+                              return ListView.separated(
+                                shrinkWrap: true,
+                                padding: EdgeInsets.zero,
+                                itemCount: matches.length,
+                                separatorBuilder: (context, index) => Divider(
+                                  color: tokens.border,
+                                  height: 1,
+                                  thickness: 1.5,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final archive = matches[index];
+                                  final address = [
+                                    archive.street,
+                                    archive.zone,
+                                    archive.barangay,
+                                    archive.city
+                                  ].where((s) => s != null && s.isNotEmpty).join(', ');
+
+                                  return ListTile(
+                                    title: Text(
+                                      archive.name,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    subtitle: address.isNotEmpty
+                                        ? Text(
+                                            address,
+                                            style: TextStyle(color: tokens.textSubtle, fontSize: 11),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        : null,
+                                    trailing: archive.phone != null && archive.phone!.isNotEmpty
+                                        ? Text(
+                                            archive.phone!,
+                                            style: TextStyle(
+                                              fontFamily: 'JetBrains Mono',
+                                              fontSize: 11,
+                                              color: tokens.textMuted,
+                                            ),
+                                          )
+                                        : null,
+                                    onTap: () {
+                                      _mapController.move(LatLng(archive.lat, archive.lng), 18.0);
+                                      _archiveSearchController.text = archive.name;
+                                      _archiveSearchFocusNode.unfocus();
+                                      _showArchiveMiniCard(archive);
+                                    },
+                                  );
+                                },
+                              );
+                            }(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
 
                 // Crosshair indicator (Fixed center - visible in Pin Mode)
                 if (_isPinMode) ...[

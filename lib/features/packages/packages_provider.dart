@@ -272,6 +272,12 @@ class PackagesNotifier extends _$PackagesNotifier {
     );
     await _dbHelper.insertRide(newRide);
 
+    // CHANGED: Record starting location immediately to track route from start
+    final startPos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
+    if (startPos != null) {
+      await _dbHelper.insertRideLocation(newRide.id, startPos.latitude, startPos.longitude);
+    }
+
     final todayPackages = await _dbHelper.getTodayPackages();
     for (final pkg in todayPackages) {
       if (pkg.rideId == null && (pkg.status == 'pending' || pkg.status == 'failed')) {
@@ -294,6 +300,12 @@ class PackagesNotifier extends _$PackagesNotifier {
       final updated = active.copyWith(endedAt: now);
       final affected = await _dbHelper.updateRide(updated);
       debugPrint('=== END RIDE: updated ride ${active.id}, rows affected: $affected');
+
+      // CHANGED: Record ending location immediately to track route to end
+      final endPos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
+      if (endPos != null) {
+        await _dbHelper.insertRideLocation(active.id, endPos.latitude, endPos.longitude);
+      }
 
       final ridePackages = await _dbHelper.getPackagesForRide(active.id);
       debugPrint('=== END RIDE: found ${ridePackages.length} packages for ride');

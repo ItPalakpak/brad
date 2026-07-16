@@ -322,6 +322,35 @@ class MapStateNotifier extends _$MapStateNotifier {
     );
   }
 
+  // CHANGED: Added updateArchiveLocation to update the archived consignee location in db and update Riverpod state
+  Future<void> updateArchiveLocation(String archiveId, LatLng newLocation) async {
+    try {
+      await DbHelper.instance.updateReceiverArchiveLocation(
+        archiveId,
+        newLocation.latitude,
+        newLocation.longitude,
+      );
+      if (_showArchives) {
+        _archives = await DbHelper.instance.getAllReceiverArchives();
+      }
+      state = MapState(
+        markers: state.markers,
+        userPosition: _userPosition,
+        routePoints: state.routePoints,
+        roadDistance: state.roadDistance,
+        roadEta: state.roadEta,
+        nearestPackage: state.nearestPackage,
+        archives: _archives,
+        showArchives: _showArchives,
+        perimeters: _perimeters,
+        showPerimeters: _showPerimeters,
+      );
+    } catch (e) {
+      debugPrint('Error updating archive location: $e');
+    }
+  }
+
+
   void togglePerimeters() async {
     _showPerimeters = !_showPerimeters;
     if (_showPerimeters) {
