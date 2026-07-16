@@ -322,17 +322,34 @@ class MapStateNotifier extends _$MapStateNotifier {
     );
   }
 
-  // CHANGED: Added updateArchiveLocation to update the archived consignee location in db and update Riverpod state
+  // CHANGED: Added updateArchiveLocation to update the archived consignee location in db, update matching packages, and update Riverpod state
   Future<void> updateArchiveLocation(String archiveId, LatLng newLocation) async {
     try {
+      // 1. Fetch matching archive details to retrieve receiver's name and phone
+      final allArchives = await DbHelper.instance.getAllReceiverArchives();
+      final archive = allArchives.firstWhere((a) => a.id == archiveId);
+
+      // 2. Update receiver archive coordinate in database
       await DbHelper.instance.updateReceiverArchiveLocation(
         archiveId,
         newLocation.latitude,
         newLocation.longitude,
       );
-      if (_showArchives) {
-        _archives = await DbHelper.instance.getAllReceiverArchives();
-      }
+
+      // 3. Update any packages matching this receiver to the same pin coordinates
+      await DbHelper.instance.updatePackageLocationsForReceiver(
+        archive.name,
+        archive.phone,
+        newLocation.latitude,
+        newLocation.longitude,
+      );
+
+      // 4. Reload updated archives list
+      _archives = await DbHelper.instance.getAllReceiverArchives();
+
+      // 5. Refresh packages provider so active package markers on map update immediately
+      await ref.read(packagesNotifierProvider.notifier).refresh();
+
       state = MapState(
         markers: state.markers,
         userPosition: _userPosition,

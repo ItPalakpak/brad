@@ -969,6 +969,11 @@ class DbHelper {
 
   // --- CRUD RECEIVER ARCHIVES ---
 
+  // CHANGED: Helper to normalize names for duplicate prevention and case-insensitive OCR matching
+  String _normalizeName(String name) {
+    return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
   Future<void> upsertReceiverArchive({
     required String name,
     String? phone,
@@ -983,19 +988,28 @@ class DbHelper {
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
-    List<Map<String, dynamic>> existing;
+    List<Map<String, dynamic>> existing = [];
     if (phone != null && phone.trim().isNotEmpty) {
       existing = await db.query(
         'receiver_archives',
         where: 'phone = ?',
         whereArgs: [phone.trim()],
       );
-    } else {
-      existing = await db.query(
-        'receiver_archives',
-        where: 'name = ?',
-        whereArgs: [name.trim()],
-      );
+    } 
+    
+    // CHANGED: Use normalized name matching if phone matching is empty to prevent duplicates with different cases
+    if (existing.isEmpty) {
+      final targetNormalized = _normalizeName(name);
+      if (targetNormalized.isNotEmpty) {
+        final allArchives = await db.query('receiver_archives');
+        for (final row in allArchives) {
+          final archiveName = row['name'] as String?;
+          if (archiveName != null && _normalizeName(archiveName) == targetNormalized) {
+            existing = [row];
+            break;
+          }
+        }
+      }
     }
 
     if (existing.isNotEmpty) {
@@ -1047,14 +1061,18 @@ class DbHelper {
       );
       if (result.isNotEmpty) return result.first;
     }
+    // CHANGED: Improve OCR lookup receiver name recognition with casing/spacing normalization to avoid duplicates
     if (name != null && name.trim().isNotEmpty) {
-      final result = await db.query(
-        'receiver_archives',
-        where: 'LOWER(name) = ?',
-        whereArgs: [name.trim().toLowerCase()],
-        limit: 1,
-      );
-      if (result.isNotEmpty) return result.first;
+      final targetNormalized = _normalizeName(name);
+      if (targetNormalized.isNotEmpty) {
+        final allArchives = await db.query('receiver_archives');
+        for (final row in allArchives) {
+          final archiveName = row['name'] as String?;
+          if (archiveName != null && _normalizeName(archiveName) == targetNormalized) {
+            return row;
+          }
+        }
+      }
     }
     return null;
   }
@@ -1078,6 +1096,20 @@ class DbHelper {
       },
       where: 'id = ?',
       whereArgs: [id],
+    );
+  }
+
+  // CHANGED: Added updatePackageLocationsForReceiver to update all active/pending package locations matching a receiver name and phone
+  Future<void> updatePackageLocationsForReceiver(String name, String? phone, double lat, double lng) async {
+    final db = await database;
+    await db.update(
+      'packages',
+      {
+        'lat': lat,
+        'lng': lng,
+      },
+      where: 'receiver_name = ? AND (receiver_phone = ? OR receiver_phone IS NULL OR ? IS NULL)',
+      whereArgs: [name, phone, phone],
     );
   }
 
