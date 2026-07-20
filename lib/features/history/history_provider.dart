@@ -11,6 +11,7 @@ class HistoryState {
   final List<String> barangayFilters;
   final List<String> paymentTypeFilters;
   final List<Package> packages;
+  final List<DeliveryAttempt> attempts;
   final PaymentSummary summary;
   final List<String> uniqueBarangays;
   final List<String> uniqueCities;
@@ -26,6 +27,7 @@ class HistoryState {
     this.barangayFilters = const [],
     this.paymentTypeFilters = const [],
     required this.packages,
+    this.attempts = const [],
     required this.summary,
     required this.uniqueBarangays,
     required this.uniqueCities,
@@ -42,6 +44,7 @@ class HistoryState {
     List<String>? barangayFilters,
     List<String>? paymentTypeFilters,
     List<Package>? packages,
+    List<DeliveryAttempt>? attempts,
     PaymentSummary? summary,
     List<String>? uniqueBarangays,
     List<String>? uniqueCities,
@@ -57,6 +60,7 @@ class HistoryState {
       barangayFilters: barangayFilters ?? this.barangayFilters,
       paymentTypeFilters: paymentTypeFilters ?? this.paymentTypeFilters,
       packages: packages ?? this.packages,
+      attempts: attempts ?? this.attempts,
       summary: summary ?? this.summary,
       uniqueBarangays: uniqueBarangays ?? this.uniqueBarangays,
       uniqueCities: uniqueCities ?? this.uniqueCities,
@@ -81,6 +85,7 @@ class HistoryNotifier extends _$HistoryNotifier {
       startDate: DateTime(now.year, now.month, now.day),
       endDate: DateTime(now.year, now.month, now.day),
       packages: [],
+      attempts: const [],
       summary: PaymentSummary.empty(),
       uniqueBarangays: [],
       uniqueCities: [],
@@ -107,13 +112,19 @@ class HistoryNotifier extends _$HistoryNotifier {
         paymentTypeFilters: state.paymentTypeFilters,
       );
 
+      final attemptsList = await _dbHelper.getAttemptsInDateRange(state.startDate, state.endDate);
+
       double codCash = 0;
       double codDigital = 0;
       double tips = 0;
       double extraAmount = 0;
 
       for (final p in list) {
-        if (p.status == 'delivered') {
+        final isDeliveredInDateRange = p.status == 'delivered' &&
+            p.deliveredAt != null &&
+            p.deliveredAt!.isAfter(state.startDate.subtract(const Duration(seconds: 1))) &&
+            p.deliveredAt!.isBefore(state.endDate.add(const Duration(days: 1)));
+        if (isDeliveredInDateRange) {
           codCash += p.codCash;
           codDigital += p.codDigital;
           tips += p.tips;
@@ -134,6 +145,7 @@ class HistoryNotifier extends _$HistoryNotifier {
 
       state = state.copyWith(
         packages: list,
+        attempts: attemptsList,
         summary: rangeSummary,
         uniqueBarangays: barangays,
         uniqueCities: cities,

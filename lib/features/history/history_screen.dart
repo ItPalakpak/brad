@@ -772,17 +772,25 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     int successCount = 0;
     int failedCount = 0;
     int rescheduledCount = 0;
+    for (final attempt in state.attempts) {
+      if (attempt.status == 'success') {
+        successCount++;
+      } else if (attempt.notes != null && attempt.notes!.toLowerCase().contains('rescheduled')) {
+        rescheduledCount++;
+      } else {
+        failedCount++;
+      }
+    }
 
     for (final p in state.packages) {
-      if (p.status == 'delivered') {
-        successCount++;
-        final dateKey = DateFormat('MM/dd').format(p.deliveredAt ?? p.createdAt);
+      final isDeliveredInDateRange = p.status == 'delivered' &&
+          p.deliveredAt != null &&
+          p.deliveredAt!.isAfter(state.startDate.subtract(const Duration(seconds: 1))) &&
+          p.deliveredAt!.isBefore(state.endDate.add(const Duration(days: 1)));
+      if (isDeliveredInDateRange) {
+        final dateKey = DateFormat('MM/dd').format(p.deliveredAt!);
         final totalEarned = p.codCash + p.codDigital + p.tips + p.extraAmount;
         dailyData[dateKey] = (dailyData[dateKey] ?? 0.0) + totalEarned;
-      } else if (p.status == 'failed' || p.status == 'returned') {
-        failedCount++;
-      } else if (p.status == 'rescheduled') {
-        rescheduledCount++;
       }
     }
 

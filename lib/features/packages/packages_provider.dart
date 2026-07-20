@@ -15,6 +15,7 @@ import '../../core/services/geofence_manager.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/notification_service.dart';
 import 'package:sqflite/sqflite.dart';
+import '../settings/badges_provider.dart';
 
 part 'packages_provider.g.dart';
 
@@ -175,6 +176,8 @@ class PackagesNotifier extends _$PackagesNotifier {
         todayRides: todayRides,
         isLoading: false,
       );
+      // CHANGED: Invalidate badges provider when package status or data updates
+      ref.invalidate(badgesNotifierProvider);
     } catch (e, stack) {
       debugPrint('=== REFRESH ERROR: $e');
       debugPrint('$stack');

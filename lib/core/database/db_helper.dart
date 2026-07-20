@@ -1576,12 +1576,13 @@ class DbHelper {
       (
         (p.created_at BETWEEN ? AND ?) OR 
         (p.delivered_at BETWEEN ? AND ?) OR
-        (p.ride_id IN (SELECT id FROM rides WHERE date BETWEEN ? AND ?))
+        (p.ride_id IN (SELECT id FROM rides WHERE date BETWEEN ? AND ?)) OR
+        (p.id IN (SELECT package_id FROM delivery_attempts WHERE attempted_at BETWEEN ? AND ?))
       )
     ''');
     final startDay = startDate.toIso8601String().substring(0, 10);
     final endDay = endDate.toIso8601String().substring(0, 10);
-    whereArgs.addAll([startStr, endStr, startStr, endStr, startDay, endDay]);
+    whereArgs.addAll([startStr, endStr, startStr, endStr, startDay, endDay, startStr, endStr]);
 
     if (searchQuery != null && searchQuery.isNotEmpty) {
       whereClauses.add('(p.tracking_number LIKE ? OR p.receiver_name LIKE ? OR p.city LIKE ? OR p.barangay LIKE ?)');
@@ -1621,6 +1622,80 @@ class DbHelper {
       final attempts = map['attempt_count'] as int? ?? 0;
       return Package.fromMap(map, attempts: attempts);
     }).toList();
+  }
+
+  Future<List<DeliveryAttempt>> getAttemptsInDateRange(DateTime startDate, DateTime endDate) async {
+    final db = await database;
+    final startStr = "${startDate.toIso8601String().substring(0, 10)} 00:00:00";
+    final endStr = "${endDate.toIso8601String().substring(0, 10)} 23:59:59";
+    
+    final result = await db.query(
+      'delivery_attempts',
+      where: 'attempted_at BETWEEN ? AND ?',
+      whereArgs: [startStr, endStr],
+      orderBy: 'attempted_at ASC',
+    );
+    return result.map((map) => DeliveryAttempt.fromMap(map)).toList();
+  }
+
+  Future<Map<String, dynamic>> getHistoricalStats() async {
+    final db = await database;
+    
+    final totalPackages = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM packages')) ?? 0;
+    final successPackages = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM packages WHERE status = 'delivered'")) ?? 0;
+    final rejectedPackages = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM packages WHERE status = 'rejected'")) ?? 0;
+    final rescheduledPackages = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(*) FROM packages WHERE status = 'rescheduled'")) ?? 0;
+    
+    final tipsRow = await db.rawQuery('SELECT SUM(tips) as sum_tips FROM packages');
+    final totalTips = tipsRow.first['sum_tips'] as double? ?? 0.0;
+    
+    final collectionsRow = await db.rawQuery("SELECT SUM(cod_cash + cod_digital + tips + extra_amount) as sum_col FROM packages WHERE status = 'delivered'");
+    final totalCollections = collectionsRow.first['sum_col'] as double? ?? 0.0;
+    
+    final uniqueBarangays = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(DISTINCT barangay) FROM packages WHERE status = 'delivered' AND barangay IS NOT NULL AND barangay != ''")) ?? 0;
+    final uniqueCities = Sqflite.firstIntValue(await db.rawQuery("SELECT COUNT(DISTINCT city) FROM packages WHERE status = 'delivered' AND city IS NOT NULL AND city != ''")) ?? 0;
+    
+    final totalRides = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM rides')) ?? 0;
+    final totalAttempts = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM delivery_attempts')) ?? 0;
+    
+    final archivesCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM receiver_archives')) ?? 0;
+    
+    final timeRows = await db.rawQuery("SELECT delivered_at FROM packages WHERE status = 'delivered' AND delivered_at IS NOT NULL");
+    int earlyMorning = 0;
+    int night = 0;
+    for (final row in timeRows) {
+      final val = row['delivered_at'] as String?;
+      if (val != null) {
+        final dt = DateTime.tryParse(val);
+        if (dt != null) {
+          if (dt.hour < 8) earlyMorning++;
+          if (dt.hour >= 18) night++;
+        }
+      }
+    }
+    
+    final multiAttempt = Sqflite.firstIntValue(await db.rawQuery('''
+      SELECT COUNT(*) FROM packages p 
+      WHERE p.status = 'delivered' 
+      AND (SELECT COUNT(*) FROM delivery_attempts WHERE package_id = p.id) > 1
+    ''')) ?? 0;
+    
+    return {
+      'totalPackages': totalPackages,
+      'successPackages': successPackages,
+      'rejectedPackages': rejectedPackages,
+      'rescheduledPackages': rescheduledPackages,
+      'totalTips': totalTips,
+      'totalCollections': totalCollections,
+      'uniqueBarangays': uniqueBarangays,
+      'uniqueCities': uniqueCities,
+      'totalRides': totalRides,
+      'totalAttempts': totalAttempts,
+      'receiverArchivesCount': archivesCount,
+      'earlyMorning': earlyMorning,
+      'night': night,
+      'multiAttempt': multiAttempt,
+    };
   }
 
   // CHANGED: Added helper to export all delivered and failed packages, their referenced rides, and delivery attempts as SQL INSERT statements

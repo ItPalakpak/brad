@@ -15,6 +15,7 @@ import '../packages/packages_provider.dart';
 import 'theme_picker.dart';
 import 'offline_map_settings.dart';
 import '../timer/timer_overlay.dart';
+import 'badges_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -92,7 +93,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final totalCount = packages.length;
     final successCount = packages.where((p) => p.status == 'delivered').length;
     final totalTips = packages.fold(0.0, (sum, p) => sum + p.tips);
-    final uniqueBarangaysDelivered = packages.where((p) => p.status == 'delivered').map((p) => p.barangay).whereType<String>().where((b) => b.isNotEmpty).toSet().length;
 
     // Calculate rating score
     double successRate = totalCount == 0 ? 0.0 : (successCount / totalCount) * 100.0;
@@ -118,10 +118,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       rankColor = const Color(0xFFC0C0C0); // Silver
     }
 
-    // Gamified badges criteria
-    final bool badgeSwift = successCount > 0; // has at least one delivery
-    final bool badgeTipMaster = totalTips >= 200; // earned 200+ PHP in tips
-    final bool badgeExplorer = uniqueBarangaysDelivered >= 3; // explored 3+ barangays
+    // Watch database-driven badges list
+    final badgesAsync = ref.watch(badgesNotifierProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -254,39 +252,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       const Divider(height: 24),
                       
                       // Badges Unlocked Section
-                      Text(
-                        'UNLOCKED BADGES',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: tokens.textSubtle,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _buildBadgeIcon(
-                            Icons.directions_bike_rounded,
-                            'Swift',
-                            badgeSwift,
-                            tokens,
+                          Text(
+                            'UNLOCKED BADGES',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: tokens.textSubtle,
+                              letterSpacing: 0.5,
+                            ),
                           ),
-                          const SizedBox(width: 12),
-                          _buildBadgeIcon(
-                            Icons.payments_rounded,
-                            'Tip Master',
-                            badgeTipMaster,
-                            tokens,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildBadgeIcon(
-                            Icons.explore_rounded,
-                            'Explorer',
-                            badgeExplorer,
-                            tokens,
+                          badgesAsync.maybeWhen(
+                            data: (badges) {
+                              final totalUnlocked = badges.where((b) => b.unlocked).length;
+                              return Text(
+                                '$totalUnlocked / ${badges.length} UNLOCKED',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: tokens.accent,
+                                  fontFamily: 'JetBrains Mono',
+                                ),
+                              );
+                            },
+                            orElse: () => const SizedBox.shrink(),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 8),
+                      badgesAsync.when(
+                        data: (badges) {
+                          final unlocked = badges.where((b) => b.unlocked).toList();
+                          if (unlocked.isEmpty) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: tokens.surfaceAlt,
+                                border: Border.all(color: tokens.border.withValues(alpha: 0.4)),
+                              ),
+                              child: Text(
+                                'No badges unlocked yet. Start delivering to earn badges!',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: tokens.textSubtle,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            );
+                          }
+                          
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: unlocked.map((badge) {
+                              return _buildDynamicBadgeIcon(badge, tokens);
+                            }).toList(),
+                          );
+                        },
+                        loading: () => const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                        error: (err, stack) => Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            'Failed to load badges: $err',
+                            style: const TextStyle(color: AppStatusColors.error, fontSize: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OffsetShadowButton.outlined(
+                        fullWidth: true,
+                        foregroundColor: tokens.accent,
+                        borderColor: tokens.border,
+                        onPressed: () {
+                          if (badgesAsync.hasValue) {
+                            _showAllBadgesBottomSheet(context, badgesAsync.value!);
+                          }
+                        },
+                        child: const Text('VIEW ALL BADGES & PROGRESS'),
                       ),
                     ],
                   ),
@@ -784,35 +832,477 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildBadgeIcon(IconData icon, String label, bool unlocked, AppColorTokens tokens) {
-    return Expanded(
+  Widget _buildDynamicBadgeIcon(RiderBadge badge, AppColorTokens tokens) {
+    return Tooltip(
+      message: '${badge.title}\n${badge.description}',
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        width: 78,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         decoration: BoxDecoration(
-          color: unlocked ? tokens.accentSoft : tokens.surfaceAlt,
+          color: tokens.accentSoft,
           border: Border.all(
-            color: unlocked ? tokens.accent : tokens.border.withValues(alpha: 0.4),
+            color: tokens.accent,
             width: 1.5,
           ),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon,
+              badge.icon,
               size: 20,
-              color: unlocked ? tokens.accent : tokens.textSubtle.withValues(alpha: 0.4),
+              color: tokens.accent,
             ),
             const SizedBox(height: 4),
             Text(
-              label,
+              badge.title,
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 9,
                 fontWeight: FontWeight.bold,
-                color: unlocked ? tokens.text : tokens.textSubtle.withValues(alpha: 0.4),
+                color: tokens.text,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showAllBadgesBottomSheet(BuildContext context, List<RiderBadge> badges) {
+    final tokens = context.tokens;
+    String selectedCategory = 'All';
+    String selectedStatus = 'All';
+    
+    final categories = ['All', 'Volume', 'Tips', 'Collections', 'Barangay', 'City', 'Rides', 'Consistency', 'Quality'];
+    final statuses = ['All', 'Unlocked', 'Locked'];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            // Filter badges
+            final filteredBadges = badges.where((b) {
+              final matchesCategory = selectedCategory == 'All' || b.category == selectedCategory;
+              final matchesStatus = selectedStatus == 'All' ||
+                  (selectedStatus == 'Unlocked' && b.unlocked) ||
+                  (selectedStatus == 'Locked' && !b.unlocked);
+              return matchesCategory && matchesStatus;
+            }).toList();
+
+            // Group filtered badges
+            final Map<String, List<RiderBadge>> grouped = {};
+            for (final b in filteredBadges) {
+              grouped.putIfAbsent(b.category, () => []).add(b);
+            }
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                border: Border(
+                  top: BorderSide(color: tokens.border, width: 2),
+                  left: BorderSide(color: tokens.border, width: 2),
+                  right: BorderSide(color: tokens.border, width: 2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Drag Handle
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: tokens.textSubtle.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'PERFORMANCE BADGES',
+                          style: TextStyle(
+                            fontFamily: 'Syne',
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.text,
+                          ),
+                        ),
+                        Text(
+                          '${badges.where((b) => b.unlocked).length} / ${badges.length} UNLOCKED',
+                          style: TextStyle(
+                            fontFamily: 'JetBrains Mono',
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 16),
+                  
+                  // Filters Section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'GROUP FILTER',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.textSubtle,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 32,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: categories.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            itemBuilder: (context, index) {
+                              final cat = categories[index];
+                              return _buildFilterChip(
+                                label: cat,
+                                selected: selectedCategory == cat,
+                                onTap: () {
+                                  setModalState(() {
+                                    selectedCategory = cat;
+                                  });
+                                },
+                                tokens: tokens,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'STATUS FILTER',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.textSubtle,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: statuses.map((status) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: _buildFilterChip(
+                                label: status,
+                                selected: selectedStatus == status,
+                                onTap: () {
+                                  setModalState(() {
+                                    selectedStatus = status;
+                                  });
+                                },
+                                tokens: tokens,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 16),
+                  
+                  // Badges List / Grid
+                  Expanded(
+                    child: filteredBadges.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No badges match the selected filters.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: tokens.textSubtle,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            itemCount: grouped.keys.length,
+                            itemBuilder: (context, index) {
+                              final categoryName = grouped.keys.elementAt(index);
+                              final categoryBadges = grouped[categoryName]!;
+                              final unlockedCount = categoryBadges.where((b) => b.unlocked).length;
+                              
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          categoryName.toUpperCase(),
+                                          style: TextStyle(
+                                            fontFamily: 'Syne',
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: tokens.text,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$unlockedCount / ${categoryBadges.length} Unlocked',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: tokens.textSubtle,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  GridView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 4,
+                                      mainAxisSpacing: 8,
+                                      crossAxisSpacing: 8,
+                                      childAspectRatio: 0.8,
+                                    ),
+                                    itemCount: categoryBadges.length,
+                                    itemBuilder: (context, idx) {
+                                      final b = categoryBadges[idx];
+                                      return _buildBadgeDetailItem(context, b, tokens);
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    required AppColorTokens tokens,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? tokens.accent : tokens.surfaceAlt,
+          border: Border.all(color: tokens.border, width: 1.5),
+        ),
+        child: Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            color: selected ? Colors.white : tokens.text,
+            fontWeight: FontWeight.bold,
+            fontSize: 10,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBadgeDetailItem(BuildContext context, RiderBadge badge, AppColorTokens tokens) {
+    return GestureDetector(
+      onTap: () => _showBadgeDetailDialog(context, badge, tokens),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          color: badge.unlocked ? tokens.accentSoft : tokens.surfaceAlt,
+          border: Border.all(
+            color: badge.unlocked ? tokens.accent : tokens.border.withValues(alpha: 0.4),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              badge.icon,
+              size: 24,
+              color: badge.unlocked ? tokens.accent : tokens.textSubtle.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              badge.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: badge.unlocked ? tokens.text : tokens.textSubtle.withValues(alpha: 0.4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBadgeDetailDialog(BuildContext context, RiderBadge badge, AppColorTokens tokens) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: OffsetShadowCard(
+          backgroundColor: tokens.surface,
+          shadowColor: tokens.border,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: badge.unlocked ? tokens.accentSoft : tokens.surfaceAlt,
+                      border: Border.all(
+                        color: badge.unlocked ? tokens.accent : tokens.border.withValues(alpha: 0.4),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      badge.icon,
+                      color: badge.unlocked ? tokens.accent : tokens.textSubtle.withValues(alpha: 0.4),
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          badge.title,
+                          style: TextStyle(
+                            fontFamily: 'Syne',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: tokens.text,
+                          ),
+                        ),
+                        Text(
+                          badge.category.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.textSubtle,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                badge.description,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: tokens.text,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Requirement:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.textSubtle,
+                    ),
+                  ),
+                  Flexible(
+                    child: Text(
+                      badge.requirement,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.text,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Progress:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.textSubtle,
+                    ),
+                  ),
+                  Text(
+                    '${badge.currentValue.toStringAsFixed(0)} / ${badge.targetValue.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: badge.unlocked ? tokens.accent : tokens.textSubtle,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: badge.progress,
+                backgroundColor: tokens.surfaceAlt,
+                valueColor: AlwaysStoppedAnimation<Color>(badge.unlocked ? tokens.accent : tokens.textSubtle.withValues(alpha: 0.5)),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OffsetShadowButton.elevated(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('CLOSE'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
