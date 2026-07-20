@@ -37,6 +37,27 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _handleTabVisibility();
+  }
+
+  void _handleTabVisibility() {
+    try {
+      final shell = StatefulNavigationShell.of(context);
+      if (shell.currentIndex == 2) {
+        if (!_isProcessingScan) {
+          _controller.start();
+        }
+      } else {
+        _controller.stop();
+      }
+    } catch (_) {
+      // Fallback
+    }
+  }
+
   Future<void> _handleBarcodeScan(String code) async {
     if (_isProcessingScan) return;
     setState(() {
@@ -256,6 +277,12 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final maxH = size.height - 250 - 100; // safety margin for bottom/top appbars
     final scanState = ref.watch(scanStateNotifierProvider);
 
+    bool isCurrentTab = true;
+    try {
+      final shell = StatefulNavigationShell.of(context);
+      isCurrentTab = shell.currentIndex == 2;
+    } catch (_) {}
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -358,16 +385,18 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
               children: [
                 // Full Screen MobileScanner
                 RepaintBoundary(
-                  child: MobileScanner(
-                    controller: _controller,
-                    onDetect: (capture) {
-                      final barcode = capture.barcodes.first;
-                      final code = barcode.rawValue;
-                      if (code != null && code.isNotEmpty) {
-                        _handleBarcodeScan(code);
-                      }
-                    },
-                  ),
+                  child: isCurrentTab
+                      ? MobileScanner(
+                          controller: _controller,
+                          onDetect: (capture) {
+                            final barcode = capture.barcodes.first;
+                            final code = barcode.rawValue;
+                            if (code != null && code.isNotEmpty) {
+                              _handleBarcodeScan(code);
+                            }
+                          },
+                        )
+                      : Container(color: Colors.black),
                 ),
 
                 // Dark semi-transparent mask
