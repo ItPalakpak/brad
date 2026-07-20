@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.15.1+1
+version: 1.25.1+1
 
 environment:
   sdk: ^3.9.2
@@ -61,8 +61,6 @@ dependencies:
   geofence_service: ^6.0.0+1
   permission_handler: ^11.3.1
 
-  # System overlay (timer widget)
-  system_alert_window: ^2.0.11
 
   # Push notifications / local notifications
   firebase_core: ^3.15.2
@@ -80,12 +78,12 @@ dependencies:
 
   # Connectivity
   connectivity_plus: ^6.0.5
+  url_launcher: ^6.3.0
 
   # CSV export
   csv: ^6.0.0
   excel: ^4.0.6
 
-  flutter_dotenv: ^6.0.0
   geocoding: ^3.0.0
   image_picker: ^1.1.2
   # CHANGED: Added for OCR scanning of parcel labels
@@ -120,7 +118,6 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/photos/
-    - .env
 
   # Custom fonts
   fonts:

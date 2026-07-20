@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:uuid/uuid.dart';
@@ -33,6 +35,7 @@ class Package {
   final int attemptCount; // computed field (from attempts table joining or subquery)
   final String? photoPath;
   final String? deliveryPhotoPath;
+  final String? signaturePath;
   final String? rideId;
   final DateTime? rescheduledDate;
   final String? rejectionReason;
@@ -63,6 +66,7 @@ class Package {
     this.attemptCount = 0,
     this.photoPath,
     this.deliveryPhotoPath,
+    this.signaturePath,
     this.rideId,
     this.rescheduledDate,
     this.rejectionReason,
@@ -98,6 +102,7 @@ class Package {
       attemptCount: attempts,
       photoPath: map['photo_path'] as String?,
       deliveryPhotoPath: map['delivery_photo_path'] as String?,
+      signaturePath: map['signature_path'] as String?,
       rideId: map['ride_id'] as String?,
       rescheduledDate: map['rescheduled_date'] != null ? DateTime.parse(map['rescheduled_date'] as String) : null,
       rejectionReason: map['rejection_reason'] as String?,
@@ -130,6 +135,7 @@ class Package {
       'delivered_at': deliveredAt?.toIso8601String(),
       'photo_path': photoPath,
       'delivery_photo_path': deliveryPhotoPath,
+      'signature_path': signaturePath,
       'ride_id': rideId,
       'rescheduled_date': rescheduledDate?.toIso8601String(),
       'rejection_reason': rejectionReason,
@@ -162,6 +168,7 @@ class Package {
     int? attemptCount,
     String? photoPath,
     String? deliveryPhotoPath,
+    String? signaturePath,
     String? rideId,
     DateTime? rescheduledDate,
     String? rejectionReason,
@@ -192,6 +199,7 @@ class Package {
       attemptCount: attemptCount ?? this.attemptCount,
       photoPath: photoPath ?? this.photoPath,
       deliveryPhotoPath: deliveryPhotoPath ?? this.deliveryPhotoPath,
+      signaturePath: signaturePath ?? this.signaturePath,
       rideId: rideId ?? this.rideId,
       rescheduledDate: rescheduledDate ?? this.rescheduledDate,
       rejectionReason: rejectionReason ?? this.rejectionReason,
@@ -412,124 +420,124 @@ class CustomPerimeter {
 class DbHelper {
   static final DbHelper instance = DbHelper._init();
   static Database? _database;
+  // BUG-14 FIX: Completer prevents race condition during concurrent database initialization
+  static Completer<Database>? _initCompleter;
 
   DbHelper._init();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('ridertrack.db');
+    if (_initCompleter != null) return _initCompleter!.future;
+    _initCompleter = Completer<Database>();
+    try {
+      _database = await _initDB('ridertrack.db');
+      _initCompleter!.complete(_database!);
+    } catch (e) {
+      _initCompleter!.completeError(e);
+      _initCompleter = null;
+      rethrow;
+    }
     return _database!;
   }
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
+    
+    // BUG-25 FIX: Backup database before opening/upgrading
+    final file = File(path);
+    if (await file.exists()) {
+      try {
+        final backupPath = '$path.bak';
+        await file.copy(backupPath);
+        debugPrint('Database backup created successfully at $backupPath');
+      } catch (e) {
+        debugPrint('Error creating database backup: $e');
+      }
+    }
+
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
 
+  Future<void> _safeExecute(Database db, String sql, String stepDesc) async {
+    try {
+      await db.execute(sql);
+    } catch (e) {
+      final err = e.toString().toLowerCase();
+      if (err.contains('duplicate') || err.contains('already exists')) {
+        debugPrint('Migration info ($stepDesc): $e');
+      } else {
+        debugPrint('Migration warning/error ($stepDesc): $e');
+      }
+    }
+  }
+
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    debugPrint('Upgrading database from $oldVersion to $newVersion...');
     if (oldVersion < 2) {
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
-      } catch (_) {}
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN photo_path TEXT', 'v2 add photo_path');
     }
     if (oldVersion < 3) {
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT');
-      } catch (_) {}
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT', 'v3 add delivery_photo_path');
     }
     if (oldVersion < 4) {
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS rides (
-            id TEXT PRIMARY KEY,
-            ride_number INTEGER NOT NULL,
-            date TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT
-          )
-        ''');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN rescheduled_date TEXT');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN rejection_reason TEXT');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
-      } catch (_) {}
+      await _safeExecute(db, '''
+        CREATE TABLE IF NOT EXISTS rides (
+          id TEXT PRIMARY KEY,
+          ride_number INTEGER NOT NULL,
+          date TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          ended_at TEXT
+        )
+      ''', 'v4 create rides table');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)', 'v4 add ride_id');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN rescheduled_date TEXT', 'v4 add rescheduled_date');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN rejection_reason TEXT', 'v4 add rejection_reason');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)', 'v4 create rides index');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)', 'v4 create packages index');
     }
     if (oldVersion < 5) {
       // Self-healing migration for version 5: ensures everything is properly declared
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS rides (
-            id TEXT PRIMARY KEY,
-            ride_number INTEGER NOT NULL,
-            date TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT
-          )
-        ''');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN photo_path TEXT');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN rescheduled_date TEXT');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE packages ADD COLUMN rejection_reason TEXT');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)');
-      } catch (_) {}
+      await _safeExecute(db, '''
+        CREATE TABLE IF NOT EXISTS rides (
+          id TEXT PRIMARY KEY,
+          ride_number INTEGER NOT NULL,
+          date TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          ended_at TEXT
+        )
+      ''', 'v5 create rides table self-heal');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN photo_path TEXT', 'v5 add photo_path self-heal');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN delivery_photo_path TEXT', 'v5 add delivery_photo_path self-heal');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN ride_id TEXT REFERENCES rides(id)', 'v5 add ride_id self-heal');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN rescheduled_date TEXT', 'v5 add rescheduled_date self-heal');
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN rejection_reason TEXT', 'v5 add rejection_reason self-heal');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(date)', 'v5 create rides index self-heal');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_packages_ride_id ON packages(ride_id)', 'v5 create packages index self-heal');
     }
     if (oldVersion < 6) {
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS receiver_archives (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            phone TEXT,
-            street TEXT,
-            zone TEXT,
-            barangay TEXT,
-            city TEXT,
-            lat REAL NOT NULL,
-            lng REAL NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-          )
-        ''');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_receiver_archives_phone ON receiver_archives(phone);');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_receiver_archives_name ON receiver_archives(name);');
-      } catch (_) {}
+      await _safeExecute(db, '''
+        CREATE TABLE IF NOT EXISTS receiver_archives (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          phone TEXT,
+          street TEXT,
+          zone TEXT,
+          barangay TEXT,
+          city TEXT,
+          lat REAL NOT NULL,
+          lng REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''', 'v6 create receiver_archives');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_receiver_archives_phone ON receiver_archives(phone);', 'v6 create archive phone index');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_receiver_archives_name ON receiver_archives(name);', 'v6 create archive name index');
 
       // Migrate existing packages with coordinates
       try {
@@ -579,35 +587,34 @@ class DbHelper {
             });
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Migration error running v6 data migration: $e');
+      }
     }
     if (oldVersion < 7) {
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS custom_perimeters (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            points TEXT NOT NULL,
-            created_at TEXT NOT NULL
-          )
-        ''');
-      } catch (_) {}
+      await _safeExecute(db, '''
+        CREATE TABLE IF NOT EXISTS custom_perimeters (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          points TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''', 'v7 create custom_perimeters');
     }
     if (oldVersion < 8) {
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS ride_locations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
-            lat REAL NOT NULL,
-            lng REAL NOT NULL,
-            timestamp TEXT NOT NULL
-          )
-        ''');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_ride_locations_ride_id ON ride_locations(ride_id);');
-      } catch (_) {}
+      await _safeExecute(db, '''
+        CREATE TABLE IF NOT EXISTS ride_locations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+          lat REAL NOT NULL,
+          lng REAL NOT NULL,
+          timestamp TEXT NOT NULL
+        )
+      ''', 'v8 create ride_locations');
+      await _safeExecute(db, 'CREATE INDEX IF NOT EXISTS idx_ride_locations_ride_id ON ride_locations(ride_id);', 'v8 create locations index');
+    }
+    if (oldVersion < 9) {
+      await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN signature_path TEXT', 'v9 add signature_path');
     }
   }
 
@@ -638,6 +645,7 @@ class DbHelper {
         delivered_at TEXT,
         photo_path TEXT,
         delivery_photo_path TEXT,
+        signature_path TEXT,
         ride_id TEXT REFERENCES rides(id),
         rescheduled_date TEXT,
         rejection_reason TEXT
@@ -887,13 +895,15 @@ class DbHelper {
     );
   }
 
+  // BUG-11 FIX: Capture timestamp once before loop for consistency
   Future<void> updateSortOrders(List<String> orderedIds) async {
     final db = await database;
     final batch = db.batch();
+    final nowStr = DateTime.now().toIso8601String();
     for (int i = 0; i < orderedIds.length; i++) {
       batch.update(
         'packages',
-        {'sort_order': i, 'updated_at': DateTime.now().toIso8601String()},
+        {'sort_order': i, 'updated_at': nowStr},
         where: 'id = ?',
         whereArgs: [orderedIds[i]],
       );
@@ -949,11 +959,127 @@ class DbHelper {
     return result.map((r) => r['payment_type'] as String).toList();
   }
 
+  Future<List<String>> getTodayUniqueBarangays() async {
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      '''SELECT DISTINCT barangay FROM packages 
+         WHERE barangay IS NOT NULL AND barangay != "" 
+         AND (
+           status = 'pending' OR
+           created_at LIKE ? OR
+           delivered_at LIKE ? OR
+           ride_id IN (SELECT id FROM rides WHERE date = ?)
+         )
+         ORDER BY barangay ASC''',
+      ['$todayStr%', '$todayStr%', todayStr]
+    );
+    return result.map((r) => r['barangay'] as String).toList();
+  }
+
+  Future<List<String>> getTodayUniqueStreets() async {
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      '''SELECT DISTINCT street FROM packages 
+         WHERE street IS NOT NULL AND street != "" 
+         AND (
+           status = 'pending' OR
+           created_at LIKE ? OR
+           delivered_at LIKE ? OR
+           ride_id IN (SELECT id FROM rides WHERE date = ?)
+         )
+         ORDER BY street ASC''',
+      ['$todayStr%', '$todayStr%', todayStr]
+    );
+    return result.map((r) => r['street'] as String).toList();
+  }
+
+  Future<List<String>> getTodayUniqueZones() async {
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      '''SELECT DISTINCT zone FROM packages 
+         WHERE zone IS NOT NULL AND zone != "" 
+         AND (
+           status = 'pending' OR
+           created_at LIKE ? OR
+           delivered_at LIKE ? OR
+           ride_id IN (SELECT id FROM rides WHERE date = ?)
+         )
+         ORDER BY zone ASC''',
+      ['$todayStr%', '$todayStr%', todayStr]
+    );
+    return result.map((r) => r['zone'] as String).toList();
+  }
+
+  Future<List<String>> getTodayUniqueCities() async {
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      '''SELECT DISTINCT city FROM packages 
+         WHERE city IS NOT NULL AND city != "" 
+         AND (
+           status = 'pending' OR
+           created_at LIKE ? OR
+           delivered_at LIKE ? OR
+           ride_id IN (SELECT id FROM rides WHERE date = ?)
+         )
+         ORDER BY city ASC''',
+      ['$todayStr%', '$todayStr%', todayStr]
+    );
+    return result.map((r) => r['city'] as String).toList();
+  }
+
+  Future<List<String>> getTodayUniqueStatuses() async {
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      '''SELECT DISTINCT status FROM packages 
+         WHERE status IS NOT NULL AND status != "" 
+         AND (
+           status = 'pending' OR
+           created_at LIKE ? OR
+           delivered_at LIKE ? OR
+           ride_id IN (SELECT id FROM rides WHERE date = ?)
+         )
+         ORDER BY status ASC''',
+      ['$todayStr%', '$todayStr%', todayStr]
+    );
+    return result.map((r) => r['status'] as String).toList();
+  }
+
+  Future<List<String>> getTodayUniquePaymentTypes() async {
+    final db = await database;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final result = await db.rawQuery(
+      '''SELECT DISTINCT payment_type FROM packages 
+         WHERE payment_type IS NOT NULL AND payment_type != "" 
+         AND (
+           status = 'pending' OR
+           created_at LIKE ? OR
+           delivered_at LIKE ? OR
+           ride_id IN (SELECT id FROM rides WHERE date = ?)
+         )
+         ORDER BY payment_type ASC''',
+      ['$todayStr%', '$todayStr%', todayStr]
+    );
+    return result.map((r) => r['payment_type'] as String).toList();
+  }
+
   // --- CRUD ATTEMPTS ---
 
   Future<int> insertAttempt(DeliveryAttempt attempt) async {
     final db = await database;
     return await db.insert('delivery_attempts', attempt.toMap());
+  }
+
+  Future<void> deleteLastAttempt(String packageId) async {
+    final db = await database;
+    await db.rawDelete(
+      'DELETE FROM delivery_attempts WHERE id = (SELECT id FROM delivery_attempts WHERE package_id = ? ORDER BY attempted_at DESC LIMIT 1)',
+      [packageId],
+    );
   }
 
   Future<List<DeliveryAttempt>> getAttemptsForPackage(String packageId) async {
@@ -997,18 +1123,16 @@ class DbHelper {
       );
     } 
     
-    // CHANGED: Use normalized name matching if phone matching is empty to prevent duplicates with different cases
+    // BUG-09 FIX: Use SQL LOWER() query instead of O(n) full-table scan for name matching
     if (existing.isEmpty) {
       final targetNormalized = _normalizeName(name);
       if (targetNormalized.isNotEmpty) {
-        final allArchives = await db.query('receiver_archives');
-        for (final row in allArchives) {
-          final archiveName = row['name'] as String?;
-          if (archiveName != null && _normalizeName(archiveName) == targetNormalized) {
-            existing = [row];
-            break;
-          }
-        }
+        existing = await db.query(
+          'receiver_archives',
+          where: "REPLACE(REPLACE(REPLACE(LOWER(name), ' ', ''), '-', ''), '.', '') = ?",
+          whereArgs: [targetNormalized],
+          limit: 1,
+        );
       }
     }
 
@@ -1061,17 +1185,17 @@ class DbHelper {
       );
       if (result.isNotEmpty) return result.first;
     }
-    // CHANGED: Improve OCR lookup receiver name recognition with casing/spacing normalization to avoid duplicates
+    // BUG-10 FIX: Use SQL LOWER() query instead of O(n) full-table scan for name lookup
     if (name != null && name.trim().isNotEmpty) {
       final targetNormalized = _normalizeName(name);
       if (targetNormalized.isNotEmpty) {
-        final allArchives = await db.query('receiver_archives');
-        for (final row in allArchives) {
-          final archiveName = row['name'] as String?;
-          if (archiveName != null && _normalizeName(archiveName) == targetNormalized) {
-            return row;
-          }
-        }
+        final result = await db.query(
+          'receiver_archives',
+          where: "REPLACE(REPLACE(REPLACE(LOWER(name), ' ', ''), '-', ''), '.', '') = ?",
+          whereArgs: [targetNormalized],
+          limit: 1,
+        );
+        if (result.isNotEmpty) return result.first;
       }
     }
     return null;
@@ -1259,171 +1383,11 @@ class DbHelper {
     });
   }
 
-  Future<void> clearAllData() async {
-    final db = await database;
-    await db.delete('delivery_attempts');
-    await db.delete('packages');
-    await db.delete('settings');
-    await db.delete('rides');
-  }
+  // BUG-26 FIX: Removed dangerous clearAllData method that had no confirmation/backup.
+  // Use clearDelivered() instead which auto-backs-up before clearing.
 
-  // CHANGED: Added seedTestData to seed database with packages across multiple dates and rides (including today's ride) for verification
-  Future<void> seedTestData() async {
-    final now = DateTime.now();
-    
-    // 1. Create a ride for today
-    final todayRideId = 'ride_today_${now.millisecondsSinceEpoch}';
-    await insertRide(Ride(
-      id: todayRideId,
-      rideNumber: 1,
-      date: now,
-      startedAt: now.subtract(const Duration(hours: 3)),
-    ));
-    
-    // 2. Create some packages for today's ride (some delivered, some pending)
-    await insertPackage(Package(
-      id: 'pkg_t1_${now.millisecondsSinceEpoch}',
-      trackingNumber: 'TRK-TODAY-DEL-${now.millisecondsSinceEpoch}',
-      receiverName: 'Juan Dela Cruz',
-      receiverPhone: '09171234567',
-      street: '123 Rizal St',
-      zone: 'Zone 1',
-      barangay: 'Brgy 1',
-      city: 'Manila',
-      paymentType: 'cod_cash',
-      codCash: 1250.0,
-      codDigital: 0.0,
-      tips: 50.0,
-      extraAmount: 0.0,
-      status: 'delivered',
-      sortOrder: 0,
-      createdAt: now.subtract(const Duration(hours: 2)),
-      updatedAt: now.subtract(const Duration(hours: 1)),
-      deliveredAt: now.subtract(const Duration(hours: 1)),
-      rideId: todayRideId,
-    ));
 
-    await insertPackage(Package(
-      id: 'pkg_t2_${now.millisecondsSinceEpoch}',
-      trackingNumber: 'TRK-TODAY-PEND1-${now.millisecondsSinceEpoch}',
-      receiverName: 'Maria Santos',
-      receiverPhone: '09187654321',
-      street: '456 Bonifacio St',
-      zone: 'Zone 2',
-      barangay: 'Brgy 2',
-      city: 'Manila',
-      paymentType: 'cod_digital',
-      codCash: 0.0,
-      codDigital: 850.0,
-      tips: 0.0,
-      extraAmount: 15.0,
-      extraLabel: 'Fragile handling',
-      status: 'pending',
-      sortOrder: 1,
-      createdAt: now.subtract(const Duration(hours: 2)),
-      updatedAt: now.subtract(const Duration(hours: 2)),
-      rideId: todayRideId,
-    ));
 
-    // 3. Create another ride today (completed)
-    final todayCompletedRideId = 'ride_today_comp_${now.millisecondsSinceEpoch}';
-    await insertRide(Ride(
-      id: todayCompletedRideId,
-      rideNumber: 2,
-      date: now,
-      startedAt: now.subtract(const Duration(hours: 6)),
-      endedAt: now.subtract(const Duration(hours: 4)),
-    ));
-
-    await insertPackage(Package(
-      id: 'pkg_t3_${now.millisecondsSinceEpoch}',
-      trackingNumber: 'TRK-TODAY-DEL2-${now.millisecondsSinceEpoch}',
-      receiverName: 'Pedro Penduko',
-      receiverPhone: '09192223333',
-      street: '789 Mabini St',
-      zone: 'Zone 3',
-      barangay: 'Brgy 3',
-      city: 'Manila',
-      paymentType: 'prepaid',
-      codCash: 0.0,
-      codDigital: 0.0,
-      tips: 20.0,
-      extraAmount: 0.0,
-      status: 'delivered',
-      sortOrder: 0,
-      createdAt: now.subtract(const Duration(hours: 5)),
-      updatedAt: now.subtract(const Duration(hours: 4)),
-      deliveredAt: now.subtract(const Duration(hours: 4)),
-      rideId: todayCompletedRideId,
-    ));
-
-    // 4. Create historical rides (from yesterday, 2 days ago, and 5 days ago)
-    final dates = [
-      now.subtract(const Duration(days: 1)),
-      now.subtract(const Duration(days: 2)),
-      now.subtract(const Duration(days: 5)),
-    ];
-    
-    int index = 1;
-    for (final date in dates) {
-      final rideId = 'ride_hist_${index}_${now.millisecondsSinceEpoch}';
-      
-      await insertRide(Ride(
-        id: rideId,
-        rideNumber: 1,
-        date: date,
-        startedAt: date.add(const Duration(hours: 9)), // 9:00 AM
-        endedAt: date.add(const Duration(hours: 12)), // 12:00 PM
-      ));
-      
-      // Seed a delivered package for this historical ride
-      await insertPackage(Package(
-        id: 'pkg_hist_del_${index}_${now.millisecondsSinceEpoch}',
-        trackingNumber: 'TRK-HIST-DEL-$index-${now.millisecondsSinceEpoch}',
-        receiverName: 'Customer Historical $index',
-        receiverPhone: '0915999999$index',
-        street: 'Street $index',
-        zone: 'Zone $index',
-        barangay: 'Barangay $index',
-        city: 'Quezon City',
-        paymentType: 'cod_cash',
-        codCash: 500.0 + (index * 100),
-        codDigital: 0.0,
-        tips: 10.0 * index,
-        extraAmount: 0.0,
-        status: 'delivered',
-        sortOrder: 0,
-        createdAt: date.add(const Duration(hours: 8)),
-        updatedAt: date.add(const Duration(hours: 11)),
-        deliveredAt: date.add(const Duration(hours: 11)),
-        rideId: rideId,
-      ));
-
-      // Seed a failed/returned package for this historical ride
-      await insertPackage(Package(
-        id: 'pkg_hist_fail_${index}_${now.millisecondsSinceEpoch}',
-        trackingNumber: 'TRK-HIST-FAIL-$index-${now.millisecondsSinceEpoch}',
-        receiverName: 'Failed Customer $index',
-        receiverPhone: '0915888888$index',
-        street: 'Street Fail $index',
-        zone: 'Zone $index',
-        barangay: 'Barangay $index',
-        city: 'Quezon City',
-        paymentType: 'cod_cash',
-        codCash: 300.0,
-        codDigital: 0.0,
-        tips: 0.0,
-        extraAmount: 0.0,
-        status: 'failed',
-        sortOrder: 1,
-        createdAt: date.add(const Duration(hours: 8)),
-        updatedAt: date.add(const Duration(hours: 11)),
-        rideId: rideId,
-      ));
-      
-      index++;
-    }
-  }
 
   // --- RIDE HELPER METHODS ---
 
@@ -1511,19 +1475,20 @@ class DbHelper {
     return result.map((map) => Package.fromMap(map)).toList();
   }
 
+  // BUG-08 FIX: Revert packages rescheduled for today or earlier (not tomorrow)
   Future<void> revertExpiredRescheduledPackages() async {
     final db = await database;
     final nowStr = DateTime.now().toIso8601String();
     final today = DateTime.now();
-    final tomorrowStart = DateTime(today.year, today.month, today.day + 1).toIso8601String();
+    final todayEnd = DateTime(today.year, today.month, today.day, 23, 59, 59).toIso8601String();
     await db.update(
       'packages',
       {
         'status': 'pending',
         'updated_at': nowStr,
       },
-      where: "status = 'rescheduled' AND rescheduled_date < ?",
-      whereArgs: [tomorrowStart],
+      where: "status = 'rescheduled' AND rescheduled_date <= ?",
+      whereArgs: [todayEnd],
     );
   }
 
@@ -1751,6 +1716,39 @@ class DbHelper {
       }
     }
     
+    // BUG-18 FIX: Include receiver_archives in backup to preserve the rider's address book
+    sqlStatements.add('-- RECEIVER_ARCHIVES');
+    final archives = await db.query('receiver_archives');
+    for (final a in archives) {
+      final id = _sqlEscape(a['id']);
+      final aName = _sqlEscape(a['name']);
+      final aPhone = _sqlEscape(a['phone']);
+      final aStreet = _sqlEscape(a['street']);
+      final aZone = _sqlEscape(a['zone']);
+      final aBrgy = _sqlEscape(a['barangay']);
+      final aCity = _sqlEscape(a['city']);
+      final aLat = a['lat'] ?? 'NULL';
+      final aLng = a['lng'] ?? 'NULL';
+      final aCreated = _sqlEscape(a['created_at']);
+      final aUpdated = _sqlEscape(a['updated_at']);
+      sqlStatements.add(
+        "INSERT OR REPLACE INTO receiver_archives (id, name, phone, street, zone, barangay, city, lat, lng, created_at, updated_at) VALUES ($id, $aName, $aPhone, $aStreet, $aZone, $aBrgy, $aCity, $aLat, $aLng, $aCreated, $aUpdated);"
+      );
+    }
+
+    // BUG-18 FIX: Include custom_perimeters in backup to preserve custom map zones
+    sqlStatements.add('-- CUSTOM_PERIMETERS');
+    final perimeters = await db.query('custom_perimeters');
+    for (final cp in perimeters) {
+      final cpId = _sqlEscape(cp['id']);
+      final cpName = _sqlEscape(cp['name']);
+      final cpPoints = _sqlEscape(cp['points']);
+      final cpCreated = _sqlEscape(cp['created_at']);
+      sqlStatements.add(
+        "INSERT OR REPLACE INTO custom_perimeters (id, name, points, created_at) VALUES ($cpId, $cpName, $cpPoints, $cpCreated);"
+      );
+    }
+
     return sqlStatements.join('\n');
   }
 
@@ -1760,7 +1758,10 @@ class DbHelper {
     return "'$str'";
   }
 
-  // CHANGED: Added executeSqlScript method to execute raw SQL insert statements from restored backup files
+  // BUG-13 FIX: Added validation to prevent SQL injection from malformed backup files.
+  // Only allows INSERT OR REPLACE INTO known tables.
+  static const _allowedTables = {'packages', 'rides', 'delivery_attempts', 'receiver_archives', 'custom_perimeters', 'ride_locations'};
+
   Future<void> executeSqlScript(String script) async {
     final db = await database;
     final lines = script.split('\n');
@@ -1768,9 +1769,24 @@ class DbHelper {
       for (final line in lines) {
         final trimmed = line.trim();
         if (trimmed.isEmpty || trimmed.startsWith('--')) continue;
-        if (trimmed.toUpperCase().startsWith('INSERT ')) {
-          await txn.execute(trimmed);
+        // Only allow INSERT OR REPLACE INTO <known_table>
+        final upper = trimmed.toUpperCase();
+        if (!upper.startsWith('INSERT ')) continue;
+        // Validate target table is in our allowlist
+        final tableMatch = RegExp(r'INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)', caseSensitive: false).firstMatch(trimmed);
+        if (tableMatch == null) continue;
+        final tableName = tableMatch.group(1)!.toLowerCase();
+        if (!_allowedTables.contains(tableName)) {
+          debugPrint('SQL restore: skipping disallowed table "$tableName"');
+          continue;
         }
+        // Reject statements containing multiple SQL commands (semicolon injection)
+        final semiCount = trimmed.split(';').where((s) => s.trim().isNotEmpty).length;
+        if (semiCount > 1) {
+          debugPrint('SQL restore: skipping multi-statement line');
+          continue;
+        }
+        await txn.execute(trimmed);
       }
     });
   }

@@ -205,7 +205,7 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
           'RIDE TRACKING',
           style: TextStyle(
             color: tokens.text,
-            fontFamily: 'Geist',
+            fontFamily: 'Syne',
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
@@ -674,7 +674,7 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
                 Text(
                   'Select Ride',
                   style: TextStyle(
-                    fontFamily: 'Geist',
+                    fontFamily: 'Syne',
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                     color: tokens.text,

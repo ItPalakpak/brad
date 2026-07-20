@@ -23,6 +23,18 @@ class DeliveryTraceStats {
   });
 }
 
+class TimedCoordinate {
+  final LatLng coordinate;
+  final DateTime timestamp;
+  final bool isPackageDelivery;
+
+  TimedCoordinate({
+    required this.coordinate,
+    required this.timestamp,
+    this.isPackageDelivery = false,
+  });
+}
+
 class HistoryMapState {
   final DateTime selectedDate;
   final List<Ride> availableRides;
@@ -132,9 +144,58 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
       // Query packages for this ride
       final packages = await _dbHelper.getPackagesForRide(ride.id);
 
-      // CHANGED: Load actual tracked GPS coordinates with timestamps for segment calculation
+      // Load actual tracked GPS coordinates with timestamps for segment calculation
       final rawLocations = await _dbHelper.getRideLocationsWithTimestamps(ride.id);
-      List<LatLng> points = rawLocations.map((r) => LatLng(r['lat'] as double, r['lng'] as double)).toList();
+
+      final List<TimedCoordinate> timedCoords = [];
+      for (final loc in rawLocations) {
+        final lat = loc['lat'] as double?;
+        final lng = loc['lng'] as double?;
+        final tsStr = loc['timestamp'] as String?;
+        if (lat != null && lng != null && tsStr != null) {
+          final ts = DateTime.tryParse(tsStr);
+          if (ts != null) {
+            timedCoords.add(TimedCoordinate(
+              coordinate: LatLng(lat, lng),
+              timestamp: ts,
+            ));
+          }
+        }
+      }
+
+      // Merge coordinates of packages delivered during this ride
+      for (final pkg in packages) {
+        if (pkg.status == 'delivered' && pkg.deliveredAt != null && pkg.lat != null && pkg.lng != null) {
+          timedCoords.add(TimedCoordinate(
+            coordinate: LatLng(pkg.lat!, pkg.lng!),
+            timestamp: pkg.deliveredAt!,
+            isPackageDelivery: true,
+          ));
+        }
+      }
+
+      // Sort all coordinates chronologically
+      timedCoords.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      // Filter coordinates to avoid OSRM density issues/duplicates while retaining key waypoints
+      List<LatLng> points = [];
+      if (timedCoords.isNotEmpty) {
+        points.add(timedCoords.first.coordinate);
+        for (int i = 1; i < timedCoords.length - 1; i++) {
+          final current = timedCoords[i];
+          if (current.isPackageDelivery) {
+            points.add(current.coordinate);
+          } else {
+            final lastAdded = points.last;
+            if (_calculateDistance(lastAdded, current.coordinate) > 20.0) {
+              points.add(current.coordinate);
+            }
+          }
+        }
+        if (timedCoords.length > 1) {
+          points.add(timedCoords.last.coordinate);
+        }
+      }
 
       // Fallback: If no location coordinates were recorded (e.g. for mock/seeded data),
       // connect package coordinates in delivery sequence.

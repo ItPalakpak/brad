@@ -421,7 +421,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 Text(
                   'Delete Perimeter',
                   style: TextStyle(
-                    fontFamily: 'Geist',
+                    fontFamily: 'Syne',
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                     color: tokens.text,
@@ -490,7 +490,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   Text(
                     'Save Custom Perimeter',
                     style: TextStyle(
-                      fontFamily: 'Geist',
+                      fontFamily: 'Syne',
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       color: tokens.text,
@@ -597,7 +597,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   Text(
                     'Pin New Package Location',
                     style: TextStyle(
-                      fontFamily: 'Geist',
+                      fontFamily: 'Syne',
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       color: tokens.text,
@@ -761,7 +761,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               'MAP OVERVIEW',
               style: TextStyle(
                 color: tokens.text,
-                fontFamily: 'Geist',
+                fontFamily: 'Syne',
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
               ),

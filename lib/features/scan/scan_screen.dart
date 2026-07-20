@@ -43,6 +43,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _isProcessingScan = true;
     });
 
+    final scanState = ref.read(scanStateNotifierProvider);
+
     // Vibrate to signal scan registered
     await HapticFeedback.mediumImpact();
 
@@ -61,7 +63,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
           ),
         );
         // Resume scanning after brief delay
-        Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(milliseconds: 1500), () {
           if (mounted) {
             setState(() {
               _isProcessingScan = false;
@@ -70,8 +72,49 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         });
       }
     } else {
-      if (mounted) {
-        _showScanResultBottomSheet(code);
+      if (scanState.isBatchMode) {
+        // If in batch mode, check if code is already in batch queue
+        if (scanState.batchQueue.contains(code)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: AppStatusColors.warning,
+                content: Text(
+                  'Already in batch queue.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        } else {
+          ref.read(scanStateNotifierProvider.notifier).addToQueue(code);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: AppStatusColors.success,
+                content: Text(
+                  'Added "$code" to batch queue.',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 1),
+              ),
+            );
+          }
+        }
+        // Resume scanning immediately in batch mode
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted) {
+            setState(() {
+              _isProcessingScan = false;
+            });
+          }
+        });
+      } else {
+        if (mounted) {
+          _showScanResultBottomSheet(code);
+        }
       }
     }
   }
@@ -128,7 +171,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   Text(
                     'Package Picked Up',
                     style: TextStyle(
-                      fontFamily: 'Geist',
+                      fontFamily: 'Syne',
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: tokens.text,
@@ -211,6 +254,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final size = MediaQuery.of(context).size;
     final maxW = size.width - 250;
     final maxH = size.height - 250 - 100; // safety margin for bottom/top appbars
+    final scanState = ref.watch(scanStateNotifierProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -223,7 +267,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
               'SCAN PACKAGE',
               style: TextStyle(
                 color: tokens.text,
-                fontFamily: 'Geist',
+                fontFamily: 'Syne',
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
               ),
@@ -231,6 +275,17 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              scanState.isBatchMode ? Icons.layers_rounded : Icons.layers_clear_rounded,
+              color: scanState.isBatchMode ? tokens.accent : null,
+            ),
+            tooltip: 'Toggle Batch Mode',
+            onPressed: () {
+              ref.read(scanStateNotifierProvider.notifier).toggleBatchMode();
+              _controller.start();
+            },
+          ),
           IconButton(
             icon: ValueListenableBuilder<MobileScannerState>(
               valueListenable: _controller,
@@ -265,6 +320,39 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       body: Column(
         children: [
           const ConnectivityBanner(),
+          if (scanState.isBatchMode)
+            Container(
+              color: tokens.accentSoft,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.layers_rounded, size: 16, color: tokens.accent),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Batch Mode Active — Queued: ${scanState.batchQueue.length}',
+                    style: TextStyle(
+                      color: tokens.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      ref.read(scanStateNotifierProvider.notifier).clearQueue();
+                    },
+                    child: Text(
+                      'CLEAR ALL',
+                      style: TextStyle(
+                        color: tokens.textSubtle,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: Stack(
               children: [
@@ -295,28 +383,115 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   maxH: maxH,
                 ),
 
-                // Informative Label Overlay
-                Positioned(
-                  bottom: 64,
-                  left: 24,
-                  right: 24,
-                  child: OffsetShadowCard(
-                    backgroundColor: tokens.surface,
-                    shadowColor: tokens.border,
-                    child: Row(
-                      children: [
-                        Icon(Icons.center_focus_strong_outlined, color: tokens.accent),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Align the barcode or QR code inside the brackets to register package pickup.',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                // Informative Label Overlay or Batch List Overlay
+                if (!scanState.isBatchMode || scanState.batchQueue.isEmpty)
+                  Positioned(
+                    bottom: 64,
+                    left: 24,
+                    right: 24,
+                    child: OffsetShadowCard(
+                      backgroundColor: tokens.surface,
+                      shadowColor: tokens.border,
+                      child: Row(
+                        children: [
+                          Icon(Icons.center_focus_strong_outlined, color: tokens.accent),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Align the barcode or QR code inside the brackets to register package pickup.',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
+
+                if (scanState.isBatchMode && scanState.batchQueue.isNotEmpty)
+                  Positioned(
+                    bottom: 24,
+                    left: 16,
+                    right: 16,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: tokens.surface,
+                        border: Border.all(color: tokens.border, width: 2.0),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'BATCH QUEUE (${scanState.batchQueue.length})',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              GestureDetector(
+                                onTap: () async {
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final navigator = GoRouter.of(context);
+                                  await ref.read(scanStateNotifierProvider.notifier).commitBatch();
+                                  messenger.showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Successfully registered batch pickup!'),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                  navigator.pop();
+                                },
+                                child: Text(
+                                  'SAVE BATCH',
+                                  style: TextStyle(
+                                    color: tokens.accent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 40,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: scanState.batchQueue.length,
+                              itemBuilder: (context, index) {
+                                final trk = scanState.batchQueue[index];
+                                return Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: tokens.bg,
+                                    border: Border.all(color: tokens.border, width: 1),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        trk,
+                                        style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      GestureDetector(
+                                        onTap: () {
+                                          ref.read(scanStateNotifierProvider.notifier).removeFromQueue(trk);
+                                        },
+                                        child: const Icon(Icons.close, size: 14, color: AppStatusColors.error),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

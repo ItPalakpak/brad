@@ -11,12 +11,13 @@ class CurrencyFormatter {
     return _formatter.format(amount);
   }
 
+  static final _formatterNoDecimal = NumberFormat.currency(
+    locale: 'en_PH',
+    symbol: 'PHP ',
+    decimalDigits: 0,
+  );
+
   static String formatNoDecimal(double amount) {
-    final fmt = NumberFormat.currency(
-      locale: 'en_PH',
-      symbol: 'PHP ',
-      decimalDigits: 0,
-    );
-    return fmt.format(amount);
+    return _formatterNoDecimal.format(amount);
   }
 }

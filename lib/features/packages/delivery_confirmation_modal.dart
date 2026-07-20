@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -52,6 +54,7 @@ class _DeliveryConfirmationModalState
   late TextEditingController _extraLabelController;
 
   String? _deliveryPhotoPath;
+  String? _signaturePath;
   bool _isSubmitting = false;
 
   bool get _isCod => widget.package.paymentType != 'prepaid';
@@ -134,6 +137,7 @@ class _DeliveryConfirmationModalState
           extraAmount: extraAmount,
           extraLabel: extraLabel.isEmpty ? null : extraLabel,
           deliveryPhotoPath: _deliveryPhotoPath,
+          signaturePath: _signaturePath,
         );
 
     if (mounted) {
@@ -167,7 +171,7 @@ class _DeliveryConfirmationModalState
                     child: Text(
                       'Confirm Delivery',
                       style: TextStyle(
-                          fontFamily: 'Geist',
+                          fontFamily: 'Syne',
                           fontWeight: FontWeight.bold,
                           fontSize: 16),
                     ),
@@ -439,6 +443,16 @@ class _DeliveryConfirmationModalState
               ),
               const SizedBox(height: 16),
 
+              // Signature Capture Widget
+              SignatureCaptureWidget(
+                onSignatureSaved: (path) {
+                  setState(() {
+                    _signaturePath = path;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
               // Grand Total
               Container(
                 decoration: BoxDecoration(
@@ -502,4 +516,133 @@ class _DeliveryConfirmationModalState
       ),
     );
   }
+}
+
+class SignatureCaptureWidget extends StatefulWidget {
+  final Function(String?) onSignatureSaved;
+
+  const SignatureCaptureWidget({super.key, required this.onSignatureSaved});
+
+  @override
+  State<SignatureCaptureWidget> createState() => _SignatureCaptureWidgetState();
+}
+
+class _SignatureCaptureWidgetState extends State<SignatureCaptureWidget> {
+  final GlobalKey _boundaryKey = GlobalKey();
+  final List<Offset?> _points = [];
+
+  void _clear() {
+    setState(() {
+      _points.clear();
+    });
+    widget.onSignatureSaved(null);
+  }
+
+  Future<void> _exportSignature() async {
+    if (_points.isEmpty) return;
+    try {
+      final boundary = _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/sig_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(bytes);
+      widget.onSignatureSaved(file.path);
+    } catch (e) {
+      debugPrint('Error exporting signature: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'CUSTOMER SIGNATURE',
+              style: TextStyle(
+                color: tokens.textSubtle,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.8,
+              ),
+            ),
+            GestureDetector(
+              onTap: _clear,
+              child: Text(
+                'CLEAR',
+                style: TextStyle(
+                  color: AppStatusColors.error,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onPanUpdate: (details) {
+            final RenderBox referenceBox = context.findRenderObject() as RenderBox;
+            final localPosition = referenceBox.globalToLocal(details.globalPosition);
+            setState(() {
+              _points.add(localPosition);
+            });
+          },
+          onPanEnd: (details) {
+            _points.add(null);
+            _exportSignature();
+          },
+          child: RepaintBoundary(
+            key: _boundaryKey,
+            child: Container(
+              height: 120,
+              decoration: BoxDecoration(
+                color: tokens.bg,
+                border: Border.all(color: tokens.border, width: 2.0),
+              ),
+              child: ClipRect(
+                child: CustomPaint(
+                  painter: _SignaturePainter(_points, tokens.text),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SignaturePainter extends CustomPainter {
+  final List<Offset?> points;
+  final Color strokeColor;
+
+  _SignaturePainter(this.points, this.strokeColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = strokeColor
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < points.length - 1; i++) {
+      if (points[i] != null && points[i + 1] != null) {
+        final p1 = Offset(points[i]!.dx.clamp(0.0, size.width), points[i]!.dy.clamp(0.0, size.height));
+        final p2 = Offset(points[i+1]!.dx.clamp(0.0, size.width), points[i+1]!.dy.clamp(0.0, size.height));
+        paint.strokeWidth = 3.0;
+        canvas.drawLine(p1, p2, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SignaturePainter oldDelegate) => true;
 }

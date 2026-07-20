@@ -29,11 +29,18 @@ class NotificationService {
   }
 
   void _onNotificationTap(NotificationResponse response) {
-    // Handle tap - can route to details using path in payload
+    // BUG-20 FIX: Navigate to package detail when notification is tapped
     final packageId = response.payload;
     if (packageId != null && packageId.isNotEmpty) {
-      // Navigation can be handled via global router or a listener
+      _onTapCallback?.call(packageId);
     }
+  }
+
+  // BUG-20 FIX: Callback for routing on notification tap — set by the app layer
+  void Function(String packageId)? _onTapCallback;
+
+  void setOnTapCallback(void Function(String packageId) callback) {
+    _onTapCallback = callback;
   }
 
   Future<void> showProximityAlert({
@@ -86,6 +93,29 @@ class NotificationService {
       id: 9999,
       title: '⏱ Timer done!',
       body: 'Your delivery timer has ended.',
+      notificationDetails: const NotificationDetails(android: androidDetails, iOS: iosDetails),
+    );
+  }
+
+  Future<void> showAutoBackupComplete(String backupPath) async {
+    const androidDetails = AndroidNotificationDetails(
+      'backup_alerts',
+      'Backup Alerts',
+      channelDescription: 'Alerts when database auto-backup completes',
+      importance: Importance.low,
+      priority: Priority.low,
+      playSound: false,
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentSound: false,
+    );
+
+    await _plugin.show(
+      id: 8888,
+      title: 'Auto-Backup Successful',
+      body: 'Ride data autosaved: ${backupPath.split("/").last}',
       notificationDetails: const NotificationDetails(android: androidDetails, iOS: iosDetails),
     );
   }

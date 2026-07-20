@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/services/map_cache_service.dart';
+import '../../core/database/db_helper.dart';
 import '../../core/services/connectivity_service.dart';
 import '../../core/services/location_service.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
@@ -25,10 +26,28 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
 
+  List<String> _barangays = ['My Location'];
+  String _selectedTarget = 'My Location';
+  double _selectedRadius = 5.0;
+
   @override
   void initState() {
     super.initState();
     _loadStats();
+    _loadBarangays();
+  }
+
+  Future<void> _loadBarangays() async {
+    try {
+      final list = await DbHelper.instance.getUniqueBarangays();
+      if (mounted) {
+        setState(() {
+          _barangays = ['My Location', ...list];
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading barangays for map: $e');
+    }
   }
 
   Future<void> _loadStats() async {
@@ -49,7 +68,7 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
     }
   }
 
-  Future<void> _downloadCurrentArea() async {
+  Future<void> _downloadOfflineMap() async {
     final isOnline = ref.read(connectivityNotifierProvider);
     if (!isOnline) return;
 
@@ -59,16 +78,34 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
     });
 
     try {
-      // Get current location
-      final pos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
-      final center = pos != null ? LatLng(pos.latitude, pos.longitude) : const LatLng(8.6074, 124.8957); // default Claveria
+      LatLng center = const LatLng(8.6074, 124.8957); // default Claveria
+      
+      if (_selectedTarget == 'My Location') {
+        final pos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
+        if (pos != null) {
+          center = LatLng(pos.latitude, pos.longitude);
+        }
+      } else {
+        final db = await DbHelper.instance.database;
+        final res = await db.query(
+          'packages',
+          columns: ['lat', 'lng'],
+          where: 'barangay = ? AND lat IS NOT NULL AND lng IS NOT NULL',
+          limit: 1,
+        );
+        if (res.isNotEmpty) {
+          final lat = (res.first['lat'] as num).toDouble();
+          final lng = (res.first['lng'] as num).toDouble();
+          center = LatLng(lat, lng);
+        }
+      }
 
       final cacheService = ref.read(mapCacheServiceProvider);
       
-      // Download 5km radius over zoom 12-16
+      // Download selected radius over zoom 12-16
       await cacheService.downloadRegion(
         center: center,
-        radiusKm: 5.0,
+        radiusKm: _selectedRadius,
         minZoom: 12,
         maxZoom: 16,
         onProgress: (progress) {
@@ -117,7 +154,7 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
             children: [
               const Text(
                 'Clear Cache?',
-                style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 12),
               const Text(
@@ -181,19 +218,100 @@ class _OfflineMapSettingsSectionState extends ConsumerState<OfflineMapSettingsSe
             const SizedBox(height: 12),
             
             if (_isDownloading) ...[
-              const Text('Downloading tiles around current area...', style: TextStyle(fontSize: 12)),
+              const Text('Downloading tiles for selected area...', style: TextStyle(fontSize: 12)),
               const SizedBox(height: 8),
               LinearProgressIndicator(value: _downloadProgress, color: tokens.accent, backgroundColor: tokens.surfaceAlt),
               const SizedBox(height: 4),
               Text('${(_downloadProgress * 100).toStringAsFixed(0)}% Completed', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
             ] else ...[
+              // Delivery Zone Target Selector
+              Text(
+                'TARGET ZONE',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: tokens.textSubtle,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: tokens.surface,
+                  border: Border.all(color: tokens.border, width: 2.0),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedTarget,
+                    isExpanded: true,
+                    dropdownColor: tokens.surface,
+                    style: TextStyle(color: tokens.text, fontWeight: FontWeight.bold),
+                    items: _barangays.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                    onChanged: (newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _selectedTarget = newValue;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Radius Selector
+              Text(
+                'DOWNLOAD RADIUS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: tokens.textSubtle,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: tokens.surface,
+                  border: Border.all(color: tokens.border, width: 2.0),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<double>(
+                    value: _selectedRadius,
+                    isExpanded: true,
+                    dropdownColor: tokens.surface,
+                    style: TextStyle(color: tokens.text, fontWeight: FontWeight.bold),
+                    items: const [
+                      DropdownMenuItem(value: 2.0, child: Text('2 KM Radius (approx 200 tiles)')),
+                      DropdownMenuItem(value: 5.0, child: Text('5 KM Radius (approx 1200 tiles)')),
+                      DropdownMenuItem(value: 10.0, child: Text('10 KM Radius (approx 5000 tiles)')),
+                    ],
+                    onChanged: (newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _selectedRadius = newValue;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Gated download button
               Tooltip(
                 message: isOnline ? '' : 'Connect to mobile data to download tiles.',
                 child: OffsetShadowButton.icon(
-                  onPressed: isOnline ? _downloadCurrentArea : null,
+                  onPressed: isOnline ? _downloadOfflineMap : null,
                   icon: const Icon(Icons.download_rounded),
-                  label: const Text('DOWNLOAD TILES (5KM AREA)'),
+                  label: Text('DOWNLOAD ZONE TILES'),
                 ),
               ),
               const SizedBox(height: 8),

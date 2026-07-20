@@ -61,17 +61,17 @@ class AppTheme {
       fontFamily: 'DM Sans',
       textTheme: textTheme.copyWith(
         titleLarge: textTheme.titleLarge?.copyWith(
-          fontFamily: 'Geist', // headings use Geist
+          fontFamily: 'Syne', // headings use Syne
           fontWeight: FontWeight.bold,
           color: tokens.text,
         ),
         titleMedium: textTheme.titleMedium?.copyWith(
-          fontFamily: 'Geist',
+          fontFamily: 'Syne',
           fontWeight: FontWeight.w600,
           color: tokens.text,
         ),
         titleSmall: textTheme.titleSmall?.copyWith(
-          fontFamily: 'Geist',
+          fontFamily: 'Syne',
           fontWeight: FontWeight.w500,
           color: tokens.text,
         ),
@@ -82,7 +82,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          fontFamily: 'Geist',
+          fontFamily: 'Syne',
           fontSize: 20,
           fontWeight: FontWeight.bold,
           color: tokens.text,

@@ -30,6 +30,11 @@ void main() async {
   final notificationService = NotificationService();
   await notificationService.init();
 
+  // BUG-20 FIX: Wire notification tap to navigate to package detail screen
+  notificationService.setOnTapCallback((packageId) {
+    appRouter.push('/packages/$packageId');
+  });
+
   final mapCacheService = MapCacheService();
   await mapCacheService.init();
 

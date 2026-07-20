@@ -25,7 +25,7 @@ final activeRideLocationProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveRideLocationRef = AutoDisposeProviderRef<AsyncValue<Position>?>;
-String _$packagesNotifierHash() => r'72ead1bf65d6a71fa3a2fda6747905eb0fef9d65';
+String _$packagesNotifierHash() => r'bb060e3ac699e27dc0611ded63fb592387cc18b5';
 
 /// See also [PackagesNotifier].
 @ProviderFor(PackagesNotifier)

@@ -86,6 +86,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final tokens = context.tokens;
 
+    final packagesState = ref.watch(packagesNotifierProvider);
+    final packages = packagesState.packages;
+
+    final totalCount = packages.length;
+    final successCount = packages.where((p) => p.status == 'delivered').length;
+    final totalTips = packages.fold(0.0, (sum, p) => sum + p.tips);
+    final uniqueBarangaysDelivered = packages.where((p) => p.status == 'delivered').map((p) => p.barangay).whereType<String>().where((b) => b.isNotEmpty).toSet().length;
+
+    // Calculate rating score
+    double successRate = totalCount == 0 ? 0.0 : (successCount / totalCount) * 100.0;
+    
+    // Performance Score formula: Success rate with small tip multiplier
+    double scoreRaw = successRate;
+    if (totalTips > 0) {
+      scoreRaw += (totalTips / 100.0).clamp(0.0, 5.0); // max +5 points for tips
+    }
+    final performanceScore = scoreRaw.clamp(0.0, 100.0).round();
+
+    // Determine tier rank
+    String rank = 'Bronze Runner';
+    Color rankColor = const Color(0xFFCD7F32); // Bronze
+    if (performanceScore >= 90 && successCount >= 10) {
+      rank = 'Platinum Elite';
+      rankColor = const Color(0xFFE5E4E2); // Platinum
+    } else if (performanceScore >= 80 && successCount >= 5) {
+      rank = 'Gold Speedster';
+      rankColor = const Color(0xFFFFD700); // Gold
+    } else if (performanceScore >= 60 && successCount >= 2) {
+      rank = 'Silver Courier';
+      rankColor = const Color(0xFFC0C0C0); // Silver
+    }
+
+    // Gamified badges criteria
+    final bool badgeSwift = successCount > 0; // has at least one delivery
+    final bool badgeTipMaster = totalTips >= 200; // earned 200+ PHP in tips
+    final bool badgeExplorer = uniqueBarangaysDelivered >= 3; // explored 3+ barangays
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -97,7 +134,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               'SETTINGS',
               style: TextStyle(
                 color: tokens.text,
-                fontFamily: 'Geist',
+                fontFamily: 'Syne',
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
               ),
@@ -157,6 +194,99 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                           onChanged: _saveRiderName,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Rider Gamification Performance Card
+                OffsetShadowCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SectionHeader(
+                        title: 'PERFORMANCE PROFILE',
+                        icon: Icons.emoji_events_outlined,
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: rankColor.withValues(alpha: 0.15),
+                              border: Border.all(color: rankColor, width: 2.0),
+                              borderRadius: BorderRadius.zero,
+                            ),
+                            child: Text(
+                              rank.toUpperCase(),
+                              style: TextStyle(
+                                color: tokens.text,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '$performanceScore PTS',
+                            style: const TextStyle(
+                              fontFamily: 'JetBrains Mono',
+                              fontWeight: FontWeight.w900,
+                              fontSize: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Stat details
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildStatItem('Success Rate', '${successRate.toStringAsFixed(0)}%', tokens),
+                          _buildStatItem('Deliveries', '$successCount', tokens),
+                          _buildStatItem('Total Tips', '₱${totalTips.toStringAsFixed(0)}', tokens),
+                        ],
+                      ),
+                      const Divider(height: 24),
+                      
+                      // Badges Unlocked Section
+                      Text(
+                        'UNLOCKED BADGES',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: tokens.textSubtle,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildBadgeIcon(
+                            Icons.directions_bike_rounded,
+                            'Swift',
+                            badgeSwift,
+                            tokens,
+                          ),
+                          const SizedBox(width: 12),
+                          _buildBadgeIcon(
+                            Icons.payments_rounded,
+                            'Tip Master',
+                            badgeTipMaster,
+                            tokens,
+                          ),
+                          const SizedBox(width: 12),
+                          _buildBadgeIcon(
+                            Icons.explore_rounded,
+                            'Explorer',
+                            badgeExplorer,
+                            tokens,
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -382,7 +512,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                     const Text(
                                       'Clear Package Data?',
                                       style: TextStyle(
-                                        fontFamily: 'Geist',
+                                        fontFamily: 'Syne',
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
                                       ),
@@ -475,7 +605,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const Text(
                   'Restore from SQL Backup',
                   style: TextStyle(
-                    fontFamily: 'Geist',
+                    fontFamily: 'Syne',
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -558,7 +688,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       const Text(
                                         'Confirm Restore?',
                                         style: TextStyle(
-                                          fontFamily: 'Geist',
+                                          fontFamily: 'Syne',
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16,
                                         ),
@@ -640,6 +770,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, AppColorTokens tokens) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: tokens.textSubtle, fontSize: 10, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      ],
+    );
+  }
+
+  Widget _buildBadgeIcon(IconData icon, String label, bool unlocked, AppColorTokens tokens) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: unlocked ? tokens.accentSoft : tokens.surfaceAlt,
+          border: Border.all(
+            color: unlocked ? tokens.accent : tokens.border.withValues(alpha: 0.4),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: unlocked ? tokens.accent : tokens.textSubtle.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: unlocked ? tokens.text : tokens.textSubtle.withValues(alpha: 0.4),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

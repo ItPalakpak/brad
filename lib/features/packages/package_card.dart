@@ -9,9 +9,11 @@ import '../../core/theme/tokens.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../../shared/widgets/payment_chip.dart';
+import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/utils/currency_formatter.dart';
 import '../../shared/utils/date_formatter.dart';
 import 'delivery_confirmation_modal.dart';
+import 'packages_provider.dart';
 
 class PackageCard extends ConsumerWidget {
   final Package package;
@@ -25,6 +27,112 @@ class PackageCard extends ConsumerWidget {
     this.index,
   });
 
+  Future<void> _quickDeliverPrepaid(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(packagesNotifierProvider.notifier);
+    final originalPackage = package;
+    await notifier.markDelivered(package.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppStatusColors.success,
+          content: Text('Prepaid package #${package.trackingNumber} marked as Delivered!'),
+          action: SnackBarAction(
+            label: 'UNDO',
+            textColor: Colors.white,
+            onPressed: () async {
+              await notifier.undoStatus(originalPackage);
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showQuickFailureSheet(BuildContext context, WidgetRef ref) async {
+    final tokens = context.tokens;
+    final notifier = ref.read(packagesNotifierProvider.notifier);
+    final originalPackage = package;
+
+    final result = await showModalBottomSheet<Map<String, String>>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.zero,
+            border: Border(
+              top: BorderSide(color: tokens.border, width: 2.0),
+              left: BorderSide(color: tokens.border, width: 2.0),
+              right: BorderSide(color: tokens.border, width: 2.0),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'LOG DELIVERY FAILURE',
+                style: TextStyle(
+                  fontFamily: 'Syne',
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: tokens.text,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                title: const Text('Recipient Not Around / No Answer'),
+                leading: Icon(Icons.person_off_rounded, color: tokens.accent),
+                onTap: () => Navigator.pop(context, {'status': 'failed', 'reason': 'Recipient not around/no answer'}),
+              ),
+              ListTile(
+                title: const Text('Refused / Rejected by Consignee'),
+                leading: Icon(Icons.cancel_presentation_rounded, color: AppStatusColors.error),
+                onTap: () => Navigator.pop(context, {'status': 'failed', 'reason': 'Refused by consignee'}),
+              ),
+              ListTile(
+                title: const Text('Incomplete Address / Cannot Locate'),
+                leading: Icon(Icons.wrong_location_rounded, color: AppStatusColors.warning),
+                onTap: () => Navigator.pop(context, {'status': 'failed', 'reason': 'Cannot locate address'}),
+              ),
+              const SizedBox(height: 12),
+              OffsetShadowButton.outlined(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('CANCEL'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (result != null) {
+      final status = result['status']!;
+      final reason = result['reason']!;
+      await notifier.markFailed(package.id, status, reason);
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppStatusColors.error,
+            content: Text('Logged attempt: $reason'),
+            action: SnackBarAction(
+              label: 'UNDO',
+              textColor: Colors.white,
+              onPressed: () async {
+                await notifier.undoStatus(originalPackage);
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tokens = context.tokens;
@@ -36,7 +144,7 @@ class PackageCard extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Slidable(
         key: ValueKey(package.id),
-        // Swipe right (reveals startActionPane on the left) -> Delivered
+        // FEATURE-02: Swipe right (reveals startActionPane on the left) -> FAILED
         startActionPane: package.status == 'pending'
             ? ActionPane(
                 motion: const ScrollMotion(),
@@ -44,34 +152,50 @@ class PackageCard extends ConsumerWidget {
                 children: [
                   SlidableAction(
                     onPressed: (slidableContext) async {
-                      final confirmed = await showDeliveryConfirmationModal(
-                        context: context,
-                        package: package,
-                        ref: ref,
-                      );
-                      if (confirmed && slidableContext.mounted) {
-                        ScaffoldMessenger.of(slidableContext).showSnackBar(
-                          SnackBar(
-                            backgroundColor: AppStatusColors.success,
-                            content: Text('Package #${package.trackingNumber} marked as Delivered!'),
-                          ),
-                        );
-                      }
+                      await _showQuickFailureSheet(context, ref);
                     },
-                    backgroundColor: AppStatusColors.success,
+                    backgroundColor: AppStatusColors.error,
                     foregroundColor: Colors.white,
-                    icon: Icons.check_circle_outline_rounded,
-                    label: 'Deliver',
+                    icon: Icons.cancel_outlined,
+                    label: 'Failed',
                     borderRadius: BorderRadius.zero,
                   ),
                 ],
               )
             : null,
-        // Swipe left (reveals endActionPane on the right) -> Edit
+        // FEATURE-02: Swipe left (reveals endActionPane on the right) -> DELIVER or EDIT
         endActionPane: ActionPane(
           motion: const ScrollMotion(),
-          extentRatio: 0.3,
+          extentRatio: 0.5,
           children: [
+            if (package.status == 'pending')
+              SlidableAction(
+                onPressed: (slidableContext) async {
+                  if (package.paymentType == 'prepaid') {
+                    await _quickDeliverPrepaid(context, ref);
+                  } else {
+                    // COD opens delivery confirmation modal
+                    final confirmed = await showDeliveryConfirmationModal(
+                      context: context,
+                      package: package,
+                      ref: ref,
+                    );
+                    if (confirmed && slidableContext.mounted) {
+                      ScaffoldMessenger.of(slidableContext).showSnackBar(
+                        SnackBar(
+                          backgroundColor: AppStatusColors.success,
+                          content: Text('Package #${package.trackingNumber} marked as Delivered!'),
+                        ),
+                      );
+                    }
+                  }
+                },
+                backgroundColor: AppStatusColors.success,
+                foregroundColor: Colors.white,
+                icon: Icons.check_circle_outline_rounded,
+                label: 'Deliver',
+                borderRadius: BorderRadius.zero,
+              ),
             SlidableAction(
               onPressed: (context) {
                 context.push('/packages/${package.id}');

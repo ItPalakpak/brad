@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,6 +13,8 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/database/db_helper.dart';
 import '../../core/services/geofence_manager.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/notification_service.dart';
+import 'package:sqflite/sqflite.dart';
 
 part 'packages_provider.g.dart';
 
@@ -100,11 +103,13 @@ class PackagesNotifier extends _$PackagesNotifier {
 
   @override
   PackagesState build() {
+    // BUG-21 FIX: Filter out low-accuracy GPS fixes before recording ride locations.
+    // Positions with accuracy > 50m are likely cell-tower triangulation and produce noisy routes.
     ref.listen<AsyncValue<Position>?>(activeRideLocationProvider, (prev, next) {
       if (next != null) {
         next.whenData((pos) async {
           final active = state.activeRide;
-          if (active != null) {
+          if (active != null && pos.accuracy <= 50.0) {
             await _dbHelper.insertRideLocation(
               active.id,
               pos.latitude,
@@ -148,18 +153,14 @@ class PackagesNotifier extends _$PackagesNotifier {
       final activeRide = await _dbHelper.getActiveRide();
       final todayRides = await _dbHelper.getRidesForDate(DateTime.now());
       final summary = await _dbHelper.getPaymentSummary();
-      final barangays = await _dbHelper.getUniqueBarangays();
-      final cities = await _dbHelper.getUniqueCities();
-      final statuses = await _dbHelper.getUniqueStatuses();
-      final paymentTypes = await _dbHelper.getUniquePaymentTypes();
-      final streets = await _dbHelper.getUniqueStreets();
-      final zones = await _dbHelper.getUniqueZones();
+      final barangays = await _dbHelper.getTodayUniqueBarangays();
+      final cities = await _dbHelper.getTodayUniqueCities();
+      final statuses = await _dbHelper.getTodayUniqueStatuses();
+      final paymentTypes = await _dbHelper.getTodayUniquePaymentTypes();
+      final streets = await _dbHelper.getTodayUniqueStreets();
+      final zones = await _dbHelper.getTodayUniqueZones();
 
-      final allRides = await _dbHelper.getAllRides();
-      debugPrint('=== ALL RIDES IN DB:');
-      for (final r in allRides) {
-        debugPrint('  Ride id: ${r.id}, num: ${r.rideNumber}, date: ${r.date}, started: ${r.startedAt}, ended: ${r.endedAt}');
-      }
+
 
       state = state.copyWith(
         packages: list,
@@ -258,6 +259,52 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
+  Future<void> bulkInsertPackages(List<String> trackingNumbers) async {
+    final active = state.activeRide;
+    final now = DateTime.now();
+    
+    // We run the insertions inside a single database transaction for extreme speed and consistency
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      for (final trk in trackingNumbers) {
+        // Auto-calculate sort order inside the loop
+        final maxOrderResult = await txn.rawQuery('SELECT MAX(sort_order) as max_order FROM packages');
+        final maxOrder = Sqflite.firstIntValue(maxOrderResult) ?? -1;
+        final newSortOrder = maxOrder + 1;
+
+        final newPkg = Package(
+          id: const Uuid().v4(),
+          trackingNumber: trk,
+          receiverName: null,
+          receiverPhone: null,
+          notes: null,
+          lat: null,
+          lng: null,
+          street: null,
+          zone: null,
+          barangay: null,
+          city: null,
+          paymentType: 'prepaid',
+          codCash: 0.0,
+          codDigital: 0.0,
+          tips: 0,
+          extraAmount: 0,
+          extraLabel: null,
+          status: 'pending',
+          sortOrder: newSortOrder,
+          createdAt: now,
+          updatedAt: now,
+        );
+
+        final finalPkg = active != null ? newPkg.copyWith(rideId: active.id) : newPkg;
+        await txn.insert('packages', finalPkg.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+
+    await refresh();
+    ref.read(geofenceManagerProvider).syncGeofences();
+  }
+
   Future<void> startRide() async {
     final active = await _dbHelper.getActiveRide();
     if (active != null) return;
@@ -288,37 +335,55 @@ class PackagesNotifier extends _$PackagesNotifier {
     await refresh();
   }
 
+  Future<String?> exportAutoBackupSql() async {
+    final sqlContent = await _dbHelper.exportDeliveredPackagesToSql();
+    if (sqlContent.isEmpty) return null;
+    
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(
+      '${dir.path}/BRAD_backup_autosave_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql',
+    );
+    await file.create(recursive: true);
+    await file.writeAsString(sqlContent);
+    return file.path;
+  }
+
   Future<void> endRide() async {
     final active = state.activeRide;
-    if (active == null) {
-      debugPrint('=== END RIDE: activeRide is null');
-      return;
-    }
+    if (active == null) return;
 
     try {
       final now = DateTime.now();
       final updated = active.copyWith(endedAt: now);
-      final affected = await _dbHelper.updateRide(updated);
-      debugPrint('=== END RIDE: updated ride ${active.id}, rows affected: $affected');
+      await _dbHelper.updateRide(updated);
 
-      // CHANGED: Record ending location immediately to track route to end
+      // Record ending location immediately to track route to end
       final endPos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
       if (endPos != null) {
         await _dbHelper.insertRideLocation(active.id, endPos.latitude, endPos.longitude);
       }
 
+      // FEATURE-07: Auto-Backup on Ride End
+      try {
+        final backupPath = await exportAutoBackupSql();
+        if (backupPath != null) {
+          debugPrint('Auto-backup saved on ride end to $backupPath');
+          // Show local notification about auto-backup
+          await ref.read(notificationServiceProvider).showAutoBackupComplete(backupPath);
+        }
+      } catch (e) {
+        debugPrint('Auto-backup failed on ride end: $e');
+      }
+
       final ridePackages = await _dbHelper.getPackagesForRide(active.id);
-      debugPrint('=== END RIDE: found ${ridePackages.length} packages for ride');
       for (final pkg in ridePackages) {
         if (pkg.status != 'delivered') {
           final updatedPkg = pkg.copyWith(rideId: null);
           await _dbHelper.updatePackage(updatedPkg);
-          debugPrint('=== END RIDE: released package ${pkg.trackingNumber} to unassigned');
         }
       }
-    } catch (e, stack) {
-      debugPrint('=== END RIDE ERROR: $e');
-      debugPrint('$stack');
+    } catch (e) {
+      debugPrint('EndRide error: $e');
     }
 
     await refresh();
@@ -384,12 +449,7 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
-  // CHANGED: Expose seedTestData method to trigger database seeding from the UI settings screen
-  Future<void> seedTestData() async {
-    state = state.copyWith(isLoading: true);
-    await _dbHelper.seedTestData();
-    await refresh();
-  }
+
 
   Future<void> markDelivered(
     String id, {
@@ -397,6 +457,7 @@ class PackagesNotifier extends _$PackagesNotifier {
     double extraAmount = 0,
     String? extraLabel,
     String? deliveryPhotoPath,
+    String? signaturePath,
   }) async {
     final pkg = await _dbHelper.getPackageById(id);
     if (pkg == null) return;
@@ -409,6 +470,7 @@ class PackagesNotifier extends _$PackagesNotifier {
       deliveredAt: DateTime.now(),
       updatedAt: DateTime.now(),
       deliveryPhotoPath: deliveryPhotoPath,
+      signaturePath: signaturePath,
     );
 
     // Write package updates
@@ -450,9 +512,15 @@ class PackagesNotifier extends _$PackagesNotifier {
     );
     await _dbHelper.updatePackage(updated);
 
+  }
+
+  Future<void> undoStatus(Package oldPackage) async {
+    await _dbHelper.updatePackage(oldPackage);
+    await _dbHelper.deleteLastAttempt(oldPackage.id);
     await refresh();
     ref.read(geofenceManagerProvider).syncGeofences();
   }
+
 
   Future<void> reorderPackages(List<Package> packagesList, int oldIndex, int newIndex) async {
     if (newIndex > oldIndex) newIndex--;
@@ -549,7 +617,8 @@ class PackagesNotifier extends _$PackagesNotifier {
       'Created At',
       'Delivered At',
       'Attempts',
-      'Delivery Photo'
+      'Delivery Photo',
+      'Signature Path'
     ];
 
     sheetObject.appendRow(headers.map((h) => TextCellValue(h)).toList());
@@ -576,6 +645,7 @@ class PackagesNotifier extends _$PackagesNotifier {
         TextCellValue(p.deliveredAt?.toIso8601String() ?? ''),
         IntCellValue(p.attemptCount),
         TextCellValue(p.deliveryPhotoPath ?? ''),
+        TextCellValue(p.signaturePath ?? ''),
       ]);
     }
 
@@ -593,5 +663,68 @@ class PackagesNotifier extends _$PackagesNotifier {
     final path = await exportToXlsx();
     final file = XFile(path);
     await Share.shareXFiles([file], text: 'BRAD Shift Package Export');
+  }
+
+  Future<void> optimizeRoute() async {
+    state = state.copyWith(isLoading: true);
+    try {
+      final currentPos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
+      if (currentPos == null) {
+        state = state.copyWith(isLoading: false);
+        return; // Handle null gracefully
+      }
+
+      final allPkgs = state.packages;
+      
+      // Separate packages:
+      // 1. Undelivered packages with coordinates (candidates for optimization)
+      final List<Package> candidates = allPkgs.where((p) => 
+        p.status != 'delivered' && p.lat != null && p.lng != null
+      ).toList();
+
+      // 2. All other packages (already delivered, failed, or lacking coordinates)
+      final List<Package> others = allPkgs.where((p) => 
+        p.status == 'delivered' || p.lat == null || p.lng == null
+      ).toList();
+
+      final List<Package> optimizedList = [];
+      double currentLat = currentPos.latitude;
+      double currentLng = currentPos.longitude;
+
+      while (candidates.isNotEmpty) {
+        int bestIndex = 0;
+        double bestDist = double.infinity;
+
+        for (int i = 0; i < candidates.length; i++) {
+          final p = candidates[i];
+          final dist = _calculateDistance(currentLat, currentLng, p.lat!, p.lng!);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestIndex = i;
+          }
+        }
+
+        final nextPkg = candidates.removeAt(bestIndex);
+        optimizedList.add(nextPkg);
+        currentLat = nextPkg.lat!;
+        currentLng = nextPkg.lng!;
+      }
+
+      // Combine optimized list with others at the end
+      final finalOrder = [...optimizedList, ...others];
+      final orderedIds = finalOrder.map((p) => p.id).toList();
+
+      await _dbHelper.updateSortOrders(orderedIds);
+      await refresh();
+    } catch (e) {
+      debugPrint('Error optimizing route: $e');
+      state = state.copyWith(isLoading: false);
+    }
+  }
+
+  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+    final dLat = lat2 - lat1;
+    final dLng = lng2 - lng1;
+    return dLat * dLat + dLng * dLng;
   }
 }

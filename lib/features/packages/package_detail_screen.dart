@@ -7,9 +7,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/database/db_helper.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/services/map_cache_service.dart';
+import '../../core/services/location_service.dart';
 import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
 import '../../shared/widgets/offset_shadow_button.dart';
@@ -45,6 +47,26 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
   bool _isEditing = false;
   // CHANGED: GlobalKey to interact with the PackageFormState
   final GlobalKey<PackageFormState> _formKey = GlobalKey<PackageFormState>();
+
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    }
+  }
+
+  Future<void> _sendSMS(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'sms',
+      path: phoneNumber,
+    );
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    }
+  }
 
   @override
   void initState() {
@@ -111,7 +133,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   children: [
                     const Text(
                       'Log Delivery Attempt',
-                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 16),
                     const Text('Select attempt status:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -203,9 +225,17 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
   Future<void> _pickLocationOnMap() async {
     if (_package == null) return;
     
-    final initialPos = _package!.lat != null && _package!.lng != null
-        ? LatLng(_package!.lat!, _package!.lng!)
-        : const LatLng(8.6074, 124.8957); // Default Claveria coords
+    // BUG-03 FIX: Use rider's current GPS location instead of hardcoded coordinates
+    LatLng initialPos;
+    if (_package!.lat != null && _package!.lng != null) {
+      initialPos = LatLng(_package!.lat!, _package!.lng!);
+    } else {
+      final currentPos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
+      if (!mounted) return;
+      initialPos = currentPos != null
+          ? LatLng(currentPos.latitude, currentPos.longitude)
+          : const LatLng(8.6074, 124.8957); // Fallback only
+    }
 
     final LatLng? pickedLocation = await showModalBottomSheet<LatLng>(
       context: context,
@@ -278,7 +308,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   Text(
                     'Auto-Populate Fields',
                     style: TextStyle(
-                      fontFamily: 'Geist',
+                      fontFamily: 'Syne',
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: tokens.text,
@@ -476,7 +506,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       if (p.receiverPhone != null && p.receiverPhone!.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 8),
                         Row(
                           children: [
                             Icon(Icons.phone_outlined, size: 14, color: tokens.textSubtle),
@@ -484,6 +514,62 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                             Text(
                               p.receiverPhone!,
                               style: TextStyle(color: tokens.textMuted, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            const Spacer(),
+                            // Quick Call Button
+                            GestureDetector(
+                              onTap: () => _makePhoneCall(p.receiverPhone!),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: tokens.surfaceAlt,
+                                  border: Border.all(color: tokens.border, width: 1.5),
+                                  borderRadius: BorderRadius.zero,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: tokens.shadowColor,
+                                      offset: const Offset(1, 1),
+                                      blurRadius: 0,
+                                    )
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.phone_in_talk_rounded, size: 12, color: tokens.accent),
+                                    const SizedBox(width: 4),
+                                    const Text('CALL', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Quick SMS Button
+                            GestureDetector(
+                              onTap: () => _sendSMS(p.receiverPhone!),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: tokens.surfaceAlt,
+                                  border: Border.all(color: tokens.border, width: 1.5),
+                                  borderRadius: BorderRadius.zero,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: tokens.shadowColor,
+                                      offset: const Offset(1, 1),
+                                      blurRadius: 0,
+                                    )
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.sms_rounded, size: 12, color: tokens.accent),
+                                    const SizedBox(width: 4),
+                                    const Text('SMS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -862,7 +948,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   const SizedBox(height: 12),
                 ],
 
-                if (_attempts.isEmpty)
+                if (_attempts.isEmpty && p.status == 'pending')
                   OffsetShadowCard(
                     child: Center(
                       child: Text(
@@ -872,49 +958,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                     ),
                   )
                 else
-                  ..._attempts.map((attempt) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: OffsetShadowCard(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          child: Row(
-                            children: [
-                              Icon(
-                                attempt.status == 'success'
-                                    ? Icons.check_circle_outline_rounded
-                                    : Icons.cancel_outlined,
-                                color: attempt.status == 'success' ? AppStatusColors.success : AppStatusColors.error,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      attempt.status == 'success'
-                                          ? 'Delivered'
-                                          : (attempt.status == 'no_answer'
-                                              ? 'Unreachable / No Answer'
-                                              : (attempt.status == 'refused' ? 'Customer Refused' : 'Failed')),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                    ),
-                                    if (attempt.notes != null && attempt.notes!.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        attempt.notes!,
-                                        style: TextStyle(color: tokens.textMuted, fontSize: 12),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                DateFormatter.formatShort(attempt.attemptedAt),
-                                style: TextStyle(color: tokens.textSubtle, fontSize: 11),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )),
+                  _buildStatusTimeline(p, tokens),
 
                 const SizedBox(height: 32),
 
@@ -1125,7 +1169,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                   children: [
                     const Text(
                       'Select Rejection Reason',
-                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 16),
                     ...['Refused to accept', 'Wrong address', 'Cannot contact customer', 'Other'].map((reason) {
@@ -1273,7 +1317,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
               children: [
                 const Text(
                   'Change Ride Assignment',
-                  style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 16),
                 // Unassigned Option
@@ -1397,4 +1441,188 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
       },
     );
   }
+
+  Widget _buildStatusTimeline(Package p, AppColorTokens tokens) {
+    // 1. Gather all timeline events
+    final List<_TimelineEvent> events = [];
+
+    // Always start with Registration
+    events.add(_TimelineEvent(
+      title: 'Parcel Registered',
+      description: 'Package entered into system',
+      timestamp: p.createdAt,
+      icon: Icons.app_registration_rounded,
+      color: tokens.textSubtle,
+    ));
+
+    // Add all delivery attempts
+    for (final attempt in _attempts) {
+      IconData icon = Icons.info_outline_rounded;
+      Color color = tokens.textSubtle;
+      String title = 'Attempt Logged';
+      
+      if (attempt.status == 'success') {
+        icon = Icons.check_circle_outline_rounded;
+        color = AppStatusColors.success;
+        title = 'Delivered';
+      } else {
+        icon = Icons.cancel_outlined;
+        color = AppStatusColors.error;
+        if (attempt.status == 'no_answer') {
+          title = 'Failed: No Answer';
+        } else if (attempt.status == 'refused') {
+          title = 'Failed: Refused';
+        } else {
+          title = 'Failed: Cannot Locate';
+        }
+      }
+
+      events.add(_TimelineEvent(
+        title: title,
+        description: attempt.notes ?? 'No additional details',
+        timestamp: attempt.attemptedAt,
+        icon: icon,
+        color: color,
+      ));
+    }
+
+    // If final status is delivered/failed/rescheduled and it occurred after last attempt
+    if (p.status == 'delivered') {
+      events.add(_TimelineEvent(
+        title: 'Delivered',
+        description: 'Successfully received by customer',
+        timestamp: p.deliveredAt ?? p.updatedAt,
+        icon: Icons.check_circle_rounded,
+        color: AppStatusColors.success,
+      ));
+    } else if (p.status == 'failed' || p.status == 'returned') {
+      events.add(_TimelineEvent(
+        title: 'Delivery Failed',
+        description: p.rejectionReason ?? 'Final delivery failure',
+        timestamp: p.updatedAt,
+        icon: Icons.error_outline_rounded,
+        color: AppStatusColors.error,
+      ));
+    } else if (p.status == 'rescheduled') {
+      events.add(_TimelineEvent(
+        title: 'Rescheduled',
+        description: p.rescheduledDate != null
+            ? 'Postponed to ${DateFormatter.formatShort(p.rescheduledDate!)}'
+            : 'Postponed to future date',
+        timestamp: p.updatedAt,
+        icon: Icons.calendar_today_rounded,
+        color: AppStatusColors.warning,
+      ));
+    }
+
+    // Sort events by timestamp ascending (chronological order)
+    events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    // Remove consecutive duplicates of final state if timestamps are identical
+    final Map<String, _TimelineEvent> uniqueEvents = {};
+    for (final ev in events) {
+      final key = '${ev.title}_${ev.timestamp.millisecondsSinceEpoch}';
+      uniqueEvents[key] = ev;
+    }
+    final sortedUniqueEvents = uniqueEvents.values.toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sortedUniqueEvents.length,
+      itemBuilder: (context, index) {
+        final ev = sortedUniqueEvents[index];
+        final isFirst = index == 0;
+        final isLast = index == sortedUniqueEvents.length - 1;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Left column: Dot and Line
+            Column(
+              children: [
+                // Top line segment
+                Container(
+                  width: 2,
+                  height: 16,
+                  color: isFirst ? Colors.transparent : tokens.border,
+                ),
+                // Dot with icon
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: tokens.surface,
+                    border: Border.all(color: tokens.border, width: 2.0),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(ev.icon, size: 16, color: ev.color),
+                ),
+                // Bottom line segment
+                Container(
+                  width: 2,
+                  height: 32,
+                  color: isLast ? Colors.transparent : tokens.border,
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            // Right column: Content Card
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                child: OffsetShadowCard(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              ev.title,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            DateFormat('MM/dd HH:mm').format(ev.timestamp),
+                            style: TextStyle(color: tokens.textSubtle, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        ev.description,
+                        style: TextStyle(color: tokens.textMuted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TimelineEvent {
+  final String title;
+  final String description;
+  final DateTime timestamp;
+  final IconData icon;
+  final Color color;
+
+  _TimelineEvent({
+    required this.title,
+    required this.description,
+    required this.timestamp,
+    required this.icon,
+    required this.color,
+  });
 }

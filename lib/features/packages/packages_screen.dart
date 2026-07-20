@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -25,17 +26,24 @@ class PackagesScreen extends ConsumerStatefulWidget {
 class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   final TextEditingController _searchController = TextEditingController();
   int _currentTab = 0; // 0 = Packages List, 1 = Totals & Stats
+  Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(() {
-      ref.read(packagesNotifierProvider.notifier).setSearchQuery(_searchController.text);
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+        if (mounted) {
+          ref.read(packagesNotifierProvider.notifier).setSearchQuery(_searchController.text);
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -50,7 +58,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
-          ref.read(packagesNotifierProvider.notifier).clearFilters();
           await ref.read(packagesNotifierProvider.notifier).refresh();
         },
         child: NestedScrollView(
@@ -69,7 +76,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       'PACKAGES',
                       style: TextStyle(
                         color: tokens.text,
-                        fontFamily: 'Geist',
+                        fontFamily: 'Syne',
                         fontWeight: FontWeight.bold,
                         fontSize: 20,
                       ),
@@ -125,6 +132,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                       icon: const Icon(Icons.clear_rounded),
                                       onPressed: () {
                                         _searchController.clear();
+                                        // BUG-05 FIX: Immediately refresh results instead of waiting for debounce
+                                        _debounceTimer?.cancel();
+                                        ref.read(packagesNotifierProvider.notifier).setSearchQuery('');
                                       },
                                     )
                                   : null,
@@ -184,6 +194,28 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 onPressed: () => notifier.clearFilters(),
                                 icon: const Icon(Icons.clear_all_rounded, size: 16),
                                 label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                              ),
+                            ],
+
+                            // Optimize Route Action (only show if there are undelivered packages and ride is active)
+                            if (state.activeRide != null && state.packages.any((p) => p.status != 'delivered')) ...[
+                              const SizedBox(width: 8),
+                              _buildFilterChip(
+                                label: 'Optimize Route',
+                                isActive: false,
+                                showDropdownArrow: false,
+                                icon: Icons.route_rounded,
+                                onTap: () async {
+                                  ScaffoldMessenger.of(context).clearSnackBars();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Optimizing route using GPS location...'),
+                                      duration: Duration(seconds: 1),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                  await notifier.optimizeRoute();
+                                },
                               ),
                             ],
                           ],
@@ -467,7 +499,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               children: [
                 const Text(
                   'End Current Ride?',
-                  style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -612,7 +644,13 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     );
   }
 
-  Widget _buildFilterChip({required String label, required bool isActive, required VoidCallback onTap}) {
+  Widget _buildFilterChip({
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+    IconData? icon,
+    bool showDropdownArrow = true,
+  }) {
     final tokens = context.tokens;
     return GestureDetector(
       onTap: onTap,
@@ -633,6 +671,10 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: isActive ? tokens.accent : tokens.textSubtle),
+              const SizedBox(width: 6),
+            ],
             Text(
               label,
               style: TextStyle(
@@ -641,12 +683,14 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.arrow_drop_down_rounded,
-              size: 16,
-              color: tokens.textSubtle,
-            ),
+            if (showDropdownArrow) ...[
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_drop_down_rounded,
+                size: 16,
+                color: tokens.textSubtle,
+              ),
+            ],
           ],
         ),
       ),
@@ -668,7 +712,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               const Text(
                 'No Packages Found',
                 style: TextStyle(
-                  fontFamily: 'Geist',
+                  fontFamily: 'Syne',
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -778,7 +822,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   children: [
                     const Text(
                       'Filter by Status',
-                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 12),
                     ConstrainedBox(
@@ -875,7 +919,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   children: [
                     const Text(
                       'Filter by Barangay',
-                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 12),
                     ConstrainedBox(
@@ -972,7 +1016,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   children: [
                     const Text(
                       'Filter by Payment Type',
-                      style: TextStyle(fontFamily: 'Geist', fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontFamily: 'Syne', fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 12),
                     ConstrainedBox(

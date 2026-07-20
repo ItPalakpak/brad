@@ -16,6 +16,7 @@ import '../../core/theme/tokens.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
 import '../../shared/widgets/offset_shadow_button.dart';
 import '../map/pin_picker_sheet.dart';
+import '../../core/services/location_service.dart';
 import 'packages_provider.dart';
 
 class PackageForm extends ConsumerStatefulWidget {
@@ -70,7 +71,7 @@ class PackageFormState extends ConsumerState<PackageForm> {
     _streetController = TextEditingController(text: p?.street ?? '');
     _zoneController = TextEditingController(text: p?.zone ?? '');
     _barangayController = TextEditingController(text: p?.barangay ?? '');
-    _cityController = TextEditingController(text: p?.city ?? 'Claveria'); // Default PH City
+    _cityController = TextEditingController(text: p?.city ?? '');
 
     _codCashController = TextEditingController(text: p?.codCash.toString() ?? '0');
     _codDigitalController = TextEditingController(text: p?.codDigital.toString() ?? '0');
@@ -121,9 +122,17 @@ class PackageFormState extends ConsumerState<PackageForm> {
   }
 
   Future<void> _pickLocationOnMap() async {
-    final initialPos = _lat != null && _lng != null
-        ? LatLng(_lat!, _lng!)
-        : const LatLng(8.6074, 124.8957); // Default Claveria coords
+    // BUG-03 FIX: Use rider's current GPS location instead of hardcoded coordinates
+    LatLng initialPos;
+    if (_lat != null && _lng != null) {
+      initialPos = LatLng(_lat!, _lng!);
+    } else {
+      final currentPos = await ref.read(locationServiceProvider.notifier).getCurrentLocation();
+      if (!mounted) return;
+      initialPos = currentPos != null
+          ? LatLng(currentPos.latitude, currentPos.longitude)
+          : const LatLng(8.6074, 124.8957); // Fallback only
+    }
 
     final LatLng? pickedLocation = await showModalBottomSheet<LatLng>(
       context: context,
@@ -248,7 +257,7 @@ class PackageFormState extends ConsumerState<PackageForm> {
                       const Text(
                         'Capture Another Photo?',
                         style: TextStyle(
-                          fontFamily: 'Geist',
+                          fontFamily: 'Syne',
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -531,12 +540,14 @@ class PackageFormState extends ConsumerState<PackageForm> {
               RegExp(r'(\d+)\s*[-]?\s*([a-zA-Z])\b'),
               (match) => '${match.group(1)}${match.group(2)!.toUpperCase()}',
             ).replaceAll(RegExp(r'\s*[-]\s*'), '').toUpperCase();
-            parsedZone = 'Zone $cleanedValue';
+            final tempZone = 'Zone $cleanedValue';
+            if (RegExp(r'^Zone \d+[A-Z]?$', caseSensitive: false).hasMatch(tempZone)) {
+              parsedZone = tempZone;
+            }
           }
         }
 
         // Barangay search: try to match against database or local Claveria barangays list
-        // CHANGED: Support cleaning sub-letters for Barangays too (e.g. "Poblacion 1-a" -> "Poblacion 1A")
         if (parsedBarangay == null || parsedBarangay.isEmpty) {
           final packagesState = ref.read(packagesNotifierProvider);
           final dbBarangays = packagesState.uniqueBarangays;
@@ -548,19 +559,9 @@ class PackageFormState extends ConsumerState<PackageForm> {
           final barangaysToSearch = dbBarangays.isNotEmpty ? dbBarangays : defaultBarangays;
           for (final b in barangaysToSearch) {
             final escB = RegExp.escape(b);
-            final brgyRegex = RegExp('$escB(?:\\s*[-]?\\s*([0-9a-zA-Z\\-]+))?\\b', caseSensitive: false);
-            final match = brgyRegex.firstMatch(text);
-            if (match != null) {
-              final suffix = match.group(1);
-              if (suffix != null && suffix.isNotEmpty) {
-                final cleanedSuffix = suffix.replaceAllMapped(
-                  RegExp(r'(\d+)\s*[-]?\s*([a-zA-Z])\b'),
-                  (m) => '${m.group(1)}${m.group(2)!.toUpperCase()}',
-                ).replaceAll(RegExp(r'\s*[-]\s*'), '').toUpperCase();
-                parsedBarangay = '$b $cleanedSuffix';
-              } else {
-                parsedBarangay = b;
-              }
+            final brgyRegex = RegExp('\\b$escB\\b', caseSensitive: false);
+            if (brgyRegex.hasMatch(text)) {
+              parsedBarangay = b;
               break;
             }
           }
@@ -684,7 +685,6 @@ class PackageFormState extends ConsumerState<PackageForm> {
       if (archiveMap != null && mounted) {
         final archiveName = archiveMap['name'] as String;
         final archiveStreet = archiveMap['street'] as String?;
-        final archiveZone = archiveMap['zone'] as String?;
         final archiveBarangay = archiveMap['barangay'] as String?;
         final archiveCity = archiveMap['city'] as String?;
         final archiveLat = archiveMap['lat'] as double?;
@@ -697,9 +697,6 @@ class PackageFormState extends ConsumerState<PackageForm> {
           }
           if (_streetController.text.trim().isEmpty && archiveStreet != null) {
             _streetController.text = archiveStreet;
-          }
-          if (_zoneController.text.trim().isEmpty && archiveZone != null) {
-            _zoneController.text = archiveZone;
           }
           if (_barangayController.text.trim().isEmpty && archiveBarangay != null) {
             _barangayController.text = archiveBarangay;
@@ -911,8 +908,10 @@ class PackageFormState extends ConsumerState<PackageForm> {
                   hintText: 'e.g. TRK-123456',
                 ),
                 style: const TextStyle(fontFamily: 'JetBrains Mono', fontWeight: FontWeight.bold),
+                maxLength: 50,
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) return 'Tracking number is required';
+                  if (val.trim().length > 50) return 'Tracking number is too long';
                   return null;
                 },
               ),
@@ -936,10 +935,20 @@ class PackageFormState extends ConsumerState<PackageForm> {
                 controller: _phoneController,
                 focusNode: _phoneFocusNode,
                 keyboardType: TextInputType.phone,
+                maxLength: 13,
                 decoration: const InputDecoration(
                   labelText: 'Receiver Phone',
                   hintText: 'e.g. 09171234567',
                 ),
+                validator: (val) {
+                  if (val != null && val.trim().isNotEmpty) {
+                    final cleaned = val.trim().replaceAll(RegExp(r'[\s-]'), '');
+                    if (!RegExp(r'^(09|\+639|639)\d{9}$').hasMatch(cleaned)) {
+                      return 'Enter a valid PH phone number (e.g. 09171234567)';
+                    }
+                  }
+                  return null;
+                },
               ),
             ),
             const SizedBox(height: 12),

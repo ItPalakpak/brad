@@ -6,7 +6,7 @@ part of 'timer_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$timerNotifierHash() => r'247ee87a90d50a1e39bd63ee2c7486ba49b6fd3f';
+String _$timerNotifierHash() => r'd7878dd98e5a98c6a286043ed3b17a48c5be0d3a';
 
 /// See also [TimerNotifier].
 @ProviderFor(TimerNotifier)
@@ -23,7 +23,7 @@ final timerNotifierProvider =
 
 typedef _$TimerNotifier = AutoDisposeNotifier<TimerState>;
 String _$bottomTimerNotifierHash() =>
-    r'32ad199134244e9bc61cf6248ed42266c3c87f6e';
+    r'b2082cb65ead43634fac70c4310df135829fbecc';
 
 /// See also [BottomTimerNotifier].
 @ProviderFor(BottomTimerNotifier)
