@@ -87,12 +87,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final tokens = context.tokens;
 
-    final packagesState = ref.watch(packagesNotifierProvider);
-    final packages = packagesState.packages;
+    // Watch database-driven badges & historical stats
+    final badgesAsync = ref.watch(badgesNotifierProvider);
+    final riderStats = badgesAsync.valueOrNull?.stats;
 
-    final totalCount = packages.length;
-    final successCount = packages.where((p) => p.status == 'delivered').length;
-    final totalTips = packages.fold(0.0, (sum, p) => sum + p.tips);
+    final totalCount = riderStats?.totalPackages ?? 0;
+    final successCount = riderStats?.successPackages ?? 0;
+    final totalTips = riderStats?.totalTips ?? 0.0;
 
     // Calculate rating score
     double successRate = totalCount == 0 ? 0.0 : (successCount / totalCount) * 100.0;
@@ -117,9 +118,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       rank = 'Silver Courier';
       rankColor = const Color(0xFFC0C0C0); // Silver
     }
-
-    // Watch database-driven badges list
-    final badgesAsync = ref.watch(badgesNotifierProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -265,10 +263,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                           ),
                           badgesAsync.maybeWhen(
-                            data: (badges) {
-                              final totalUnlocked = badges.where((b) => b.unlocked).length;
+                            data: (state) {
+                              final totalUnlocked = state.badges.where((b) => b.unlocked).length;
                               return Text(
-                                '$totalUnlocked / ${badges.length} UNLOCKED',
+                                '$totalUnlocked / ${state.badges.length} UNLOCKED',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
@@ -283,8 +281,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                       const SizedBox(height: 8),
                       badgesAsync.when(
-                        data: (badges) {
-                          final unlocked = badges.where((b) => b.unlocked).toList();
+                        data: (state) {
+                          final unlocked = state.badges.where((b) => b.unlocked).toList();
                           if (unlocked.isEmpty) {
                             return Container(
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -304,10 +302,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             );
                           }
                           
+                          // Show only 3 recent badges achieved by rider
+                          final recent3 = unlocked.length > 3 ? unlocked.sublist(unlocked.length - 3) : unlocked;
+
                           return Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children: unlocked.map((badge) {
+                            children: recent3.map((badge) {
                               return _buildDynamicBadgeIcon(badge, tokens);
                             }).toList(),
                           );
@@ -331,7 +332,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         borderColor: tokens.border,
                         onPressed: () {
                           if (badgesAsync.hasValue) {
-                            _showAllBadgesBottomSheet(context, badgesAsync.value!);
+                            _showAllBadgesBottomSheet(context, badgesAsync.value!.badges);
                           }
                         },
                         child: const Text('VIEW ALL BADGES & PROGRESS'),

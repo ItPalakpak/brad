@@ -82,15 +82,28 @@ class RiderBadge {
   double get progress => targetValue == 0 ? 1.0 : (currentValue / targetValue).clamp(0.0, 1.0);
 }
 
+class BadgesState {
+  final RiderStats stats;
+  final List<RiderBadge> badges;
+
+  BadgesState({
+    required this.stats,
+    required this.badges,
+  });
+}
+
 @riverpod
 class BadgesNotifier extends _$BadgesNotifier {
   @override
-  Future<List<RiderBadge>> build() async {
+  Future<BadgesState> build() async {
     final dbHelper = DbHelper.instance;
     final statsMap = await dbHelper.getHistoricalStats();
     final stats = RiderStats.fromMap(statsMap);
     
-    return _generateBadges(stats);
+    return BadgesState(
+      stats: stats,
+      badges: _generateBadges(stats),
+    );
   }
 
   List<RiderBadge> _generateBadges(RiderStats stats) {

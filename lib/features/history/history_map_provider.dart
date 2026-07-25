@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../core/database/db_helper.dart';
+import '../../shared/utils/route_smoother.dart';
 
 part 'history_map_provider.g.dart';
 
@@ -46,6 +47,8 @@ class HistoryMapState {
   final bool isLoading;
   // CHANGED: Add deliveryStats map to associate delivered packages with their true route telemetry
   final Map<String, DeliveryTraceStats> deliveryStats;
+  // CHANGED: Add deliverySequence map (packageId -> 1-based index)
+  final Map<String, int> deliverySequence;
 
   HistoryMapState({
     required this.selectedDate,
@@ -57,6 +60,7 @@ class HistoryMapState {
     this.duration = Duration.zero,
     this.isLoading = false,
     this.deliveryStats = const {},
+    this.deliverySequence = const {},
   });
 
   HistoryMapState copyWith({
@@ -69,6 +73,7 @@ class HistoryMapState {
     Duration? duration,
     bool? isLoading,
     Map<String, DeliveryTraceStats>? deliveryStats,
+    Map<String, int>? deliverySequence,
   }) {
     return HistoryMapState(
       selectedDate: selectedDate ?? this.selectedDate,
@@ -80,6 +85,7 @@ class HistoryMapState {
       duration: duration ?? this.duration,
       isLoading: isLoading ?? this.isLoading,
       deliveryStats: deliveryStats ?? this.deliveryStats,
+      deliverySequence: deliverySequence ?? this.deliverySequence,
     );
   }
 }
@@ -144,97 +150,43 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
       // Query packages for this ride
       final packages = await _dbHelper.getPackagesForRide(ride.id);
 
-      // Load actual tracked GPS coordinates with timestamps for segment calculation
+      // Load actual tracked GPS coordinates logged during the ride (startRide -> endRide)
       final rawLocations = await _dbHelper.getRideLocationsWithTimestamps(ride.id);
 
-      final List<TimedCoordinate> timedCoords = [];
+      List<LatLng> rawPoints = [];
       for (final loc in rawLocations) {
         final lat = loc['lat'] as double?;
         final lng = loc['lng'] as double?;
-        final tsStr = loc['timestamp'] as String?;
-        if (lat != null && lng != null && tsStr != null) {
-          final ts = DateTime.tryParse(tsStr);
-          if (ts != null) {
-            timedCoords.add(TimedCoordinate(
-              coordinate: LatLng(lat, lng),
-              timestamp: ts,
-            ));
-          }
+        if (lat != null && lng != null) {
+          rawPoints.add(LatLng(lat, lng));
         }
       }
 
-      // Merge coordinates of packages delivered during this ride
-      for (final pkg in packages) {
-        if (pkg.status == 'delivered' && pkg.deliveredAt != null && pkg.lat != null && pkg.lng != null) {
-          timedCoords.add(TimedCoordinate(
-            coordinate: LatLng(pkg.lat!, pkg.lng!),
-            timestamp: pkg.deliveredAt!,
-            isPackageDelivery: true,
-          ));
-        }
-      }
-
-      // Sort all coordinates chronologically
-      timedCoords.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-      // Filter coordinates to avoid OSRM density issues/duplicates while retaining key waypoints
-      List<LatLng> points = [];
-      if (timedCoords.isNotEmpty) {
-        points.add(timedCoords.first.coordinate);
-        for (int i = 1; i < timedCoords.length - 1; i++) {
-          final current = timedCoords[i];
-          if (current.isPackageDelivery) {
-            points.add(current.coordinate);
-          } else {
-            final lastAdded = points.last;
-            if (_calculateDistance(lastAdded, current.coordinate) > 20.0) {
-              points.add(current.coordinate);
-            }
-          }
-        }
-        if (timedCoords.length > 1) {
-          points.add(timedCoords.last.coordinate);
-        }
-      }
-
-      // Fallback: If no location coordinates were recorded (e.g. for mock/seeded data),
-      // connect package coordinates in delivery sequence.
-      if (points.isEmpty) {
-        final sortedPackages = packages.where((p) => p.lat != null && p.lng != null).toList();
-        sortedPackages.sort((a, b) {
-          if (a.deliveredAt != null && b.deliveredAt != null) {
-            return a.deliveredAt!.compareTo(b.deliveredAt!);
-          } else if (a.deliveredAt != null) {
-            return -1; // delivered first
-          } else if (b.deliveredAt != null) {
-            return 1;
-          } else {
-            return a.sortOrder.compareTo(b.sortOrder);
-          }
-        });
-        points = sortedPackages.map((p) => LatLng(p.lat!, p.lng!)).toList();
-      }
-
-      // CHANGED: Calculate time, distance, and interval telemetry for each delivered package
+      // Compute delivery sequence numbers for delivered packages (1, 2, 3...)
+      final Map<String, int> deliverySequence = {};
       final Map<String, DeliveryTraceStats> deliveryStats = {};
       final deliveredPkgs = packages
           .where((p) => p.status == 'delivered' && p.deliveredAt != null)
           .toList()
         ..sort((a, b) => a.deliveredAt!.compareTo(b.deliveredAt!));
 
-      DateTime lastTime = ride.startedAt;
-      LatLng? lastLatLng;
-      if (points.isNotEmpty) {
-        lastLatLng = points.first;
+      for (int i = 0; i < deliveredPkgs.length; i++) {
+        final pkg = deliveredPkgs[i];
+        deliverySequence[pkg.id] = i + 1;
       }
+
+      DateTime lastTime = ride.startedAt;
+      LatLng? lastLatLng = rawPoints.isNotEmpty ? rawPoints.first : null;
 
       for (int i = 0; i < deliveredPkgs.length; i++) {
         final pkg = deliveredPkgs[i];
         final pkgTime = pkg.deliveredAt!;
 
-        // Find location points logged between lastTime and pkgTime
         final segmentPoints = rawLocations.where((loc) {
-          final t = DateTime.parse(loc['timestamp'] as String);
+          final tsStr = loc['timestamp'] as String?;
+          if (tsStr == null) return false;
+          final t = DateTime.tryParse(tsStr);
+          if (t == null) return false;
           return t.isAfter(lastTime) && !t.isAfter(pkgTime);
         }).toList();
 
@@ -249,7 +201,6 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           currentLatLng = nextPt;
         }
 
-        // Connect final segment to parcel location
         if (pkg.lat != null && pkg.lng != null) {
           final pkgPt = LatLng(pkg.lat!, pkg.lng!);
           if (currentLatLng != null) {
@@ -258,7 +209,6 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           currentLatLng = pkgPt;
         }
 
-        // Fallback: If no tracked GPS points, use straight line distance from previous parcel/start
         if (segmentDistance == 0.0 && pkg.lat != null && pkg.lng != null) {
           if (i > 0) {
             final prevPkg = deliveredPkgs[i - 1];
@@ -283,6 +233,24 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
         lastLatLng = currentLatLng;
       }
 
+      // Fallback: If no location coordinates were recorded (e.g. for mock/seeded data),
+      // connect package coordinates in delivery sequence.
+      if (rawPoints.isEmpty) {
+        final sortedPackages = packages.where((p) => p.lat != null && p.lng != null).toList();
+        sortedPackages.sort((a, b) {
+          if (a.deliveredAt != null && b.deliveredAt != null) {
+            return a.deliveredAt!.compareTo(b.deliveredAt!);
+          } else if (a.deliveredAt != null) {
+            return -1;
+          } else if (b.deliveredAt != null) {
+            return 1;
+          } else {
+            return a.sortOrder.compareTo(b.sortOrder);
+          }
+        });
+        rawPoints = sortedPackages.map((p) => LatLng(p.lat!, p.lng!)).toList();
+      }
+
       // Duration calculation
       Duration duration = Duration.zero;
       if (ride.endedAt != null) {
@@ -291,51 +259,58 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
         duration = DateTime.now().difference(ride.startedAt);
       }
 
-      if (points.length < 2) {
+      if (rawPoints.isEmpty) {
         state = HistoryMapState(
           selectedDate: date,
           availableRides: availableRides,
           selectedRide: ride,
           packages: packages,
-          routePoints: points,
+          routePoints: const [],
           distanceMeters: 0.0,
           duration: duration,
           isLoading: false,
           deliveryStats: deliveryStats,
+          deliverySequence: deliverySequence,
         );
         return;
       }
 
-      // Try fetching road route sequentially from OSRM
-      final roadRoute = await _fetchRoadRoute(points);
-      if (roadRoute != null) {
+      // Apply offline noise reduction & Douglas-Peucker simplification
+      final List<LatLng> offlineSmoothed = RouteSmoother.smoothRoute(rawPoints);
+
+      // Try fetching map-matched road route from OSRM (online upgrade)
+      final mapMatchedRoute = await _fetchMapMatchedRoute(offlineSmoothed);
+      
+      if (mapMatchedRoute != null && mapMatchedRoute.points.isNotEmpty) {
         state = HistoryMapState(
           selectedDate: date,
           availableRides: availableRides,
           selectedRide: ride,
           packages: packages,
-          routePoints: roadRoute.points,
-          distanceMeters: roadRoute.distance,
+          routePoints: mapMatchedRoute.points,
+          distanceMeters: mapMatchedRoute.distance,
           duration: duration,
           isLoading: false,
           deliveryStats: deliveryStats,
+          deliverySequence: deliverySequence,
         );
       } else {
-        // Fallback: geodesic straight-line distance
+        // Offline primary fallback: calculate distance along offline smoothed trace
         double dist = 0.0;
-        for (int i = 0; i < points.length - 1; i++) {
-          dist += _calculateDistance(points[i], points[i + 1]);
+        for (int i = 0; i < offlineSmoothed.length - 1; i++) {
+          dist += _calculateDistance(offlineSmoothed[i], offlineSmoothed[i + 1]);
         }
         state = HistoryMapState(
           selectedDate: date,
           availableRides: availableRides,
           selectedRide: ride,
           packages: packages,
-          routePoints: points,
+          routePoints: offlineSmoothed,
           distanceMeters: dist,
           duration: duration,
           isLoading: false,
           deliveryStats: deliveryStats,
+          deliverySequence: deliverySequence,
         );
       }
     } catch (e) {
@@ -357,44 +332,63 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
     return earthRadius * c;
   }
 
-  Future<HistoryMapRouteData?> _fetchRoadRoute(List<LatLng> points) async {
+  Future<HistoryMapRouteData?> _fetchMapMatchedRoute(List<LatLng> points) async {
+    if (points.length < 2) return null;
     final client = HttpClient();
     try {
-      final coordsString = points.map((p) => '${p.longitude},${p.latitude}').join(';');
-      final uri = Uri.parse(
-        'https://router.project-osrm.org/route/v1/driving/$coordsString'
-        '?overview=full&geometries=geojson'
-      );
-      final request = await client.getUrl(uri).timeout(const Duration(seconds: 5));
-      final response = await request.close();
-      
-      if (response.statusCode == 200) {
-        final responseBody = await response.transform(utf8.decoder).join();
-        final json = jsonDecode(responseBody) as Map<String, dynamic>;
-        
-        if (json['code'] == 'Ok' && json['routes'] != null && json['routes'].isNotEmpty) {
-          final route = json['routes'][0] as Map<String, dynamic>;
-          final distance = (route['distance'] as num).toDouble();
-          
-          final geometry = route['geometry'] as Map<String, dynamic>;
-          final coordinates = geometry['coordinates'] as List<dynamic>;
-          
-          final routePoints = coordinates.map((coord) {
-            final list = coord as List<dynamic>;
-            return LatLng(
-              (list[1] as num).toDouble(),
-              (list[0] as num).toDouble(),
-            );
-          }).toList();
-          
-          return HistoryMapRouteData(
-            points: routePoints,
-            distance: distance,
-          );
+      // OSRM match API has a ~100 waypoint limit per request, batch into chunks if needed
+      const chunkSize = 80;
+      List<LatLng> matchedPoints = [];
+      double totalDistance = 0.0;
+
+      for (int i = 0; i < points.length; i += chunkSize - 1) {
+        final end = math.min(i + chunkSize, points.length);
+        final chunk = points.sublist(i, end);
+        if (chunk.length < 2) break;
+
+        final coordsString = chunk.map((p) => '${p.longitude},${p.latitude}').join(';');
+        final uri = Uri.parse(
+          'https://router.project-osrm.org/match/v1/driving/$coordsString'
+          '?overview=full&geometries=geojson'
+        );
+        final request = await client.getUrl(uri).timeout(const Duration(seconds: 4));
+        final response = await request.close();
+
+        if (response.statusCode == 200) {
+          final responseBody = await response.transform(utf8.decoder).join();
+          final json = jsonDecode(responseBody) as Map<String, dynamic>;
+
+          if (json['code'] == 'Ok' && json['matchings'] != null && json['matchings'].isNotEmpty) {
+            final matchings = json['matchings'] as List<dynamic>;
+            for (final m in matchings) {
+              final matchMap = m as Map<String, dynamic>;
+              totalDistance += (matchMap['distance'] as num? ?? 0.0).toDouble();
+
+              final geometry = matchMap['geometry'] as Map<String, dynamic>;
+              final coordinates = geometry['coordinates'] as List<dynamic>;
+
+              final pts = coordinates.map((coord) {
+                final list = coord as List<dynamic>;
+                return LatLng(
+                  (list[1] as num).toDouble(),
+                  (list[0] as num).toDouble(),
+                );
+              }).toList();
+
+              matchedPoints.addAll(pts);
+            }
+          }
         }
       }
+
+      if (matchedPoints.isNotEmpty) {
+        return HistoryMapRouteData(
+          points: matchedPoints,
+          distance: totalDistance,
+        );
+      }
     } catch (e) {
-      debugPrint('Error fetching history road route from OSRM: $e');
+      debugPrint('Error fetching map-matched route from OSRM: $e');
     } finally {
       client.close();
     }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../shared/widgets/connectivity_banner.dart';
@@ -269,6 +270,44 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     });
   }
 
+  Future<void> _scanBatchLabels() async {
+    final picker = ImagePicker();
+    final List<XFile> images = await picker.pickMultiImage(imageQuality: 80);
+    if (images.isEmpty) return;
+
+    final paths = images.map((img) => img.path).toList();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Processing batch parcel OCR...'),
+          ],
+        ),
+        duration: Duration(seconds: 3),
+      ),
+    );
+
+    final matched = await ref.read(scanStateNotifierProvider.notifier).processBatchOcr(paths);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Matched OCR details for $matched / ${paths.length} parcel photo(s)!'),
+          backgroundColor: AppStatusColors.success,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -458,27 +497,50 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 'BATCH QUEUE (${scanState.batchQueue.length})',
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
-                              GestureDetector(
-                                onTap: () async {
-                                  final messenger = ScaffoldMessenger.of(context);
-                                  final navigator = GoRouter.of(context);
-                                  await ref.read(scanStateNotifierProvider.notifier).commitBatch();
-                                  messenger.showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Successfully registered batch pickup!'),
-                                      behavior: SnackBarBehavior.floating,
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  GestureDetector(
+                                    onTap: scanState.isProcessingOcr ? null : _scanBatchLabels,
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.document_scanner_outlined, size: 14, color: tokens.accent),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'SCAN LABELS',
+                                          style: TextStyle(
+                                            color: tokens.accent,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  );
-                                  navigator.pop();
-                                },
-                                child: Text(
-                                  'SAVE BATCH',
-                                  style: TextStyle(
-                                    color: tokens.accent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
                                   ),
-                                ),
+                                  const SizedBox(width: 14),
+                                  GestureDetector(
+                                    onTap: () async {
+                                      final messenger = ScaffoldMessenger.of(context);
+                                      final navigator = GoRouter.of(context);
+                                      await ref.read(scanStateNotifierProvider.notifier).commitBatch();
+                                      messenger.showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Successfully registered batch pickup!'),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                      navigator.pop();
+                                    },
+                                    child: Text(
+                                      'SAVE BATCH',
+                                      style: TextStyle(
+                                        color: tokens.accent,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -490,16 +552,21 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                               itemCount: scanState.batchQueue.length,
                               itemBuilder: (context, index) {
                                 final trk = scanState.batchQueue[index];
+                                final hasOcr = scanState.batchOcrResults.containsKey(trk);
                                 return Container(
                                   margin: const EdgeInsets.only(right: 8),
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: tokens.bg,
-                                    border: Border.all(color: tokens.border, width: 1),
+                                    color: hasOcr ? tokens.accentSoft : tokens.bg,
+                                    border: Border.all(color: hasOcr ? tokens.accent : tokens.border, width: 1),
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
+                                      if (hasOcr) ...[
+                                        Icon(Icons.check_circle_rounded, size: 14, color: tokens.accent),
+                                        const SizedBox(width: 4),
+                                      ],
                                       Text(
                                         trk,
                                         style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: FontWeight.bold),

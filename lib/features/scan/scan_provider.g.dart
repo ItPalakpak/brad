@@ -6,7 +6,7 @@ part of 'scan_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$scanStateNotifierHash() => r'eaed953d7e36e60970d8025afa6cb32c6ee48429';
+String _$scanStateNotifierHash() => r'4a9b0217372c4f7dcd60d8a2674996c7055e3fe8';
 
 /// See also [ScanStateNotifier].
 @ProviderFor(ScanStateNotifier)

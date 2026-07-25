@@ -315,16 +315,54 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
                                 break;
                             }
 
+                            final seqNum = state.deliverySequence[p.id];
+
                             return Marker(
                               point: LatLng(p.lat!, p.lng!),
-                              width: 40,
-                              height: 40,
+                              width: 44,
+                              height: 44,
                               child: GestureDetector(
                                 onTap: () => _showPackageMiniCard(context, p),
-                                child: Icon(
-                                  Icons.location_pin,
-                                  color: markerColor,
-                                  size: 40,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Center(
+                                      child: Icon(
+                                        Icons.location_pin,
+                                        color: markerColor,
+                                        size: 40,
+                                      ),
+                                    ),
+                                    if (p.status == 'delivered' && seqNum != null)
+                                      Positioned(
+                                        top: 0,
+                                        right: 0,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(color: Colors.white, width: 1.5),
+                                          ),
+                                          constraints: const BoxConstraints(
+                                            minWidth: 18,
+                                            minHeight: 18,
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '$seqNum',
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold,
+                                                fontFamily: 'JetBrains Mono',
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                             );

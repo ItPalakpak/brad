@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../core/database/db_helper.dart';
+import '../../shared/utils/ocr_parser.dart';
 import '../../core/services/geofence_manager.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/notification_service.dart';
@@ -289,6 +290,70 @@ class PackagesNotifier extends _$PackagesNotifier {
           city: null,
           paymentType: 'prepaid',
           codCash: 0.0,
+          codDigital: 0.0,
+          tips: 0,
+          extraAmount: 0,
+          extraLabel: null,
+          status: 'pending',
+          sortOrder: newSortOrder,
+          createdAt: now,
+          updatedAt: now,
+        );
+
+        final finalPkg = active != null ? newPkg.copyWith(rideId: active.id) : newPkg;
+        await txn.insert('packages', finalPkg.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+
+    await refresh();
+    ref.read(geofenceManagerProvider).syncGeofences();
+  }
+
+  Future<void> bulkInsertPackagesWithDetails(
+    List<String> trackingNumbers,
+    Map<String, OcrParsedResult> ocrDataMap,
+  ) async {
+    final active = state.activeRide;
+    final now = DateTime.now();
+
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      for (final trk in trackingNumbers) {
+        final maxOrderResult = await txn.rawQuery('SELECT MAX(sort_order) as max_order FROM packages');
+        final maxOrder = Sqflite.firstIntValue(maxOrderResult) ?? -1;
+        final newSortOrder = maxOrder + 1;
+
+        final ocr = ocrDataMap[trk];
+
+        // Archive lookup if available for receiver name / phone
+        Map<String, dynamic>? archiveMap;
+        if (ocr != null && ((ocr.name != null && ocr.name!.isNotEmpty) || (ocr.phone != null && ocr.phone!.isNotEmpty))) {
+          archiveMap = await _dbHelper.lookupReceiverArchive(ocr.name, ocr.phone);
+        }
+
+        final street = ocr?.street ?? archiveMap?['street'] as String?;
+        final zone = ocr?.zone ?? archiveMap?['zone'] as String?;
+        final barangay = ocr?.barangay ?? archiveMap?['barangay'] as String?;
+        final city = ocr?.city ?? archiveMap?['city'] as String?;
+        final lat = archiveMap?['lat'] as double?;
+        final lng = archiveMap?['lng'] as double?;
+        final codAmount = ocr?.codAmount ?? 0.0;
+        final paymentType = (codAmount > 0) ? 'cod_cash' : 'prepaid';
+
+        final newPkg = Package(
+          id: const Uuid().v4(),
+          trackingNumber: trk,
+          receiverName: ocr?.name ?? archiveMap?['name'] as String?,
+          receiverPhone: ocr?.phone ?? archiveMap?['phone'] as String?,
+          notes: null,
+          lat: lat,
+          lng: lng,
+          street: street,
+          zone: zone,
+          barangay: barangay,
+          city: city,
+          paymentType: paymentType,
+          codCash: paymentType == 'cod_cash' ? codAmount : 0.0,
           codDigital: 0.0,
           tips: 0,
           extraAmount: 0,
