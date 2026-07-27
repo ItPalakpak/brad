@@ -10,6 +10,7 @@ import '../../shared/widgets/connectivity_banner.dart';
 import '../../shared/widgets/offset_shadow_card.dart';
 import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/brand_logo.dart';
+import '../../shared/utils/ocr_parser.dart';
 import 'scan_provider.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
@@ -22,6 +23,8 @@ class ScanScreen extends ConsumerStatefulWidget {
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   late MobileScannerController _controller;
   bool _isProcessingScan = false;
+  // CHANGED: Added accordion toggle state for batch queue UI
+  bool _isBatchQueueExpanded = true;
 
   @override
   void initState() {
@@ -270,6 +273,309 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     });
   }
 
+  // CHANGED: Interactive preview and edit bottom sheet for batch OCR details fitting neo-brutalist theme
+  void _showBatchOcrDetailsBottomSheet(String trackingNumber, OcrParsedResult ocr) {
+    final tokens = context.tokens;
+
+    final nameController = TextEditingController(text: ocr.name ?? '');
+    final phoneController = TextEditingController(text: ocr.phone ?? '');
+    final streetController = TextEditingController(text: ocr.street ?? '');
+    final barangayController = TextEditingController(text: ocr.barangay ?? '');
+    final cityController = TextEditingController(text: ocr.city ?? '');
+    final codController = TextEditingController(
+      text: (ocr.codAmount != null && ocr.codAmount! > 0) ? ocr.codAmount!.toStringAsFixed(2) : '',
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                borderRadius: BorderRadius.zero,
+                border: Border(
+                  top: BorderSide(color: tokens.border, width: 2.0),
+                  left: BorderSide(color: tokens.border, width: 2.0),
+                  right: BorderSide(color: tokens.border, width: 2.0),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: tokens.shadowColor,
+                    offset: const Offset(0, -4),
+                    blurRadius: 0,
+                  ),
+                ],
+              ),
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 50,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: tokens.textSubtle.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.zero,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(Icons.edit_note_rounded, color: tokens.accent, size: 24),
+                        const SizedBox(width: 8),
+                        Text(
+                          'PREVIEW & EDIT WAYBILL',
+                          style: TextStyle(
+                            fontFamily: 'Syne',
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.text,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'TRACKING NUMBER',
+                      style: TextStyle(
+                        color: tokens.textSubtle,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: tokens.bg,
+                        border: Border.all(color: tokens.border, width: 1.5),
+                      ),
+                      child: Text(
+                        trackingNumber,
+                        style: TextStyle(
+                          fontFamily: 'JetBrains Mono',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: tokens.text,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // RECIPIENT NAME
+                    Text(
+                      'RECIPIENT NAME',
+                      style: TextStyle(color: tokens.textSubtle, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: nameController,
+                      style: TextStyle(color: tokens.text, fontSize: 14, fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: tokens.inputBg,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.accent, width: 2.0)),
+                        hintText: 'Enter recipient name',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // PHONE NUMBER
+                    Text(
+                      'PHONE NUMBER',
+                      style: TextStyle(color: tokens.textSubtle, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      style: TextStyle(color: tokens.text, fontSize: 14, fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: tokens.inputBg,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.accent, width: 2.0)),
+                        hintText: 'Enter phone number',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // STREET ADDRESS
+                    Text(
+                      'STREET / ADDRESS',
+                      style: TextStyle(color: tokens.textSubtle, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: streetController,
+                      style: TextStyle(color: tokens.text, fontSize: 14, fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: tokens.inputBg,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.accent, width: 2.0)),
+                        hintText: 'House/Street address',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // BARANGAY & CITY ROW
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'BARANGAY',
+                                style: TextStyle(color: tokens.textSubtle, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                              ),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: barangayController,
+                                style: TextStyle(color: tokens.text, fontSize: 14, fontWeight: FontWeight.w600),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: tokens.inputBg,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.accent, width: 2.0)),
+                                  hintText: 'Barangay',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'CITY',
+                                style: TextStyle(color: tokens.textSubtle, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                              ),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: cityController,
+                                style: TextStyle(color: tokens.text, fontSize: 14, fontWeight: FontWeight.w600),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: tokens.inputBg,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.accent, width: 2.0)),
+                                  hintText: 'City',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // COD AMOUNT
+                    Text(
+                      'COD AMOUNT (₱)',
+                      style: TextStyle(color: tokens.textSubtle, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: codController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: TextStyle(fontFamily: 'JetBrains Mono', color: tokens.accent, fontSize: 15, fontWeight: FontWeight.bold),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: tokens.inputBg,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.border, width: 1.5)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: tokens.accent, width: 2.0)),
+                        hintText: '0.00',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // SAVE CHANGES BUTTON
+                    OffsetShadowCard(
+                      backgroundColor: tokens.accent,
+                      shadowColor: tokens.border,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      onTap: () {
+                        final parsedCod = double.tryParse(codController.text) ?? 0.0;
+                        final updatedOcr = OcrParsedResult(
+                          trackingNumber: trackingNumber,
+                          name: nameController.text.trim().isEmpty ? null : nameController.text.trim(),
+                          phone: phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
+                          street: streetController.text.trim().isEmpty ? null : streetController.text.trim(),
+                          zone: ocr.zone,
+                          barangay: barangayController.text.trim().isEmpty ? null : barangayController.text.trim(),
+                          city: cityController.text.trim().isEmpty ? null : cityController.text.trim(),
+                          codAmount: parsedCod,
+                          paymentType: parsedCod > 0 ? 'cod_cash' : 'prepaid',
+                        );
+
+                        ref.read(scanStateNotifierProvider.notifier).updateBatchOcrResult(trackingNumber, updatedOcr);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: AppStatusColors.success,
+                            content: Text('Updated details for $trackingNumber!'),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 1),
+                          ),
+                        );
+                      },
+                      child: Center(
+                        child: Text(
+                          'SAVE CHANGES',
+                          style: TextStyle(
+                            color: tokens.textInvert,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OffsetShadowButton.outlined(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('CANCEL', textAlign: TextAlign.center),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _scanBatchLabels() async {
     final picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage(imageQuality: 80);
@@ -475,17 +781,25 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                     ),
                   ),
 
+                // CHANGED: Positioned batch queue section at top instead of bottom, implemented expandable accordion, clickable OCR chips, and fixed save button navigation
                 if (scanState.isBatchMode && scanState.batchQueue.isNotEmpty)
                   Positioned(
-                    bottom: 24,
+                    top: 16,
                     left: 16,
                     right: 16,
                     child: Container(
                       decoration: BoxDecoration(
                         color: tokens.surface,
                         border: Border.all(color: tokens.border, width: 2.0),
+                        boxShadow: [
+                          BoxShadow(
+                            color: tokens.shadowColor,
+                            offset: const Offset(0, 4),
+                            blurRadius: 0,
+                          ),
+                        ],
                       ),
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -493,9 +807,32 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                'BATCH QUEUE (${scanState.batchQueue.length})',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _isBatchQueueExpanded = !_isBatchQueueExpanded;
+                                  });
+                                },
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _isBatchQueueExpanded
+                                          ? Icons.keyboard_arrow_up
+                                          : Icons.keyboard_arrow_down,
+                                      size: 20,
+                                      color: tokens.text,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'BATCH QUEUE (${scanState.batchQueue.length})',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: tokens.text,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -521,15 +858,21 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                   GestureDetector(
                                     onTap: () async {
                                       final messenger = ScaffoldMessenger.of(context);
-                                      final navigator = GoRouter.of(context);
+                                      final router = GoRouter.of(context);
                                       await ref.read(scanStateNotifierProvider.notifier).commitBatch();
-                                      messenger.showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Successfully registered batch pickup!'),
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
-                                      navigator.pop();
+                                      if (mounted) {
+                                        messenger.showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Successfully registered batch pickup!'),
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                        if (router.canPop()) {
+                                          router.pop();
+                                        } else {
+                                          router.go('/packages');
+                                        }
+                                      }
                                     },
                                     child: Text(
                                       'SAVE BATCH',
@@ -544,46 +887,57 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            height: 40,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: scanState.batchQueue.length,
-                              itemBuilder: (context, index) {
-                                final trk = scanState.batchQueue[index];
-                                final hasOcr = scanState.batchOcrResults.containsKey(trk);
-                                return Container(
-                                  margin: const EdgeInsets.only(right: 8),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: hasOcr ? tokens.accentSoft : tokens.bg,
-                                    border: Border.all(color: hasOcr ? tokens.accent : tokens.border, width: 1),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (hasOcr) ...[
-                                        Icon(Icons.check_circle_rounded, size: 14, color: tokens.accent),
-                                        const SizedBox(width: 4),
-                                      ],
-                                      Text(
-                                        trk,
-                                        style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: FontWeight.bold),
+                          if (_isBatchQueueExpanded) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 40,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: scanState.batchQueue.length,
+                                itemBuilder: (context, index) {
+                                  final trk = scanState.batchQueue[index];
+                                  final ocr = scanState.batchOcrResults[trk];
+                                  final hasOcr = ocr != null;
+                                  return GestureDetector(
+                                    onTap: hasOcr ? () => _showBatchOcrDetailsBottomSheet(trk, ocr) : null,
+                                    child: Container(
+                                      margin: const EdgeInsets.only(right: 8),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: hasOcr ? tokens.accentSoft : tokens.bg,
+                                        border: Border.all(color: hasOcr ? tokens.accent : tokens.border, width: 1),
                                       ),
-                                      const SizedBox(width: 6),
-                                      GestureDetector(
-                                        onTap: () {
-                                          ref.read(scanStateNotifierProvider.notifier).removeFromQueue(trk);
-                                        },
-                                        child: const Icon(Icons.close, size: 14, color: AppStatusColors.error),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (hasOcr) ...[
+                                            Icon(Icons.check_circle_rounded, size: 14, color: tokens.accent),
+                                            const SizedBox(width: 4),
+                                          ],
+                                          Text(
+                                            trk,
+                                            style: TextStyle(
+                                              fontFamily: 'JetBrains Mono',
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: hasOcr ? tokens.accent : tokens.text,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          GestureDetector(
+                                            onTap: () {
+                                              ref.read(scanStateNotifierProvider.notifier).removeFromQueue(trk);
+                                            },
+                                            child: const Icon(Icons.close, size: 14, color: AppStatusColors.error),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                );
-                              },
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),

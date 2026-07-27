@@ -119,6 +119,13 @@ class ScanStateNotifier extends _$ScanStateNotifier {
     return matchedCount;
   }
 
+  // CHANGED: Added method to update batch OCR result for a specific tracking number
+  void updateBatchOcrResult(String trackingNumber, OcrParsedResult updatedResult) {
+    final updatedMap = Map<String, OcrParsedResult>.from(state.batchOcrResults);
+    updatedMap[trackingNumber] = updatedResult;
+    state = state.copyWith(batchOcrResults: updatedMap);
+  }
+
   Future<void> commitBatch() async {
     if (state.batchQueue.isEmpty) return;
     
