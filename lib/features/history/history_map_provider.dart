@@ -295,6 +295,27 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
           deliverySequence: deliverySequence,
         );
       } else {
+        // CHANGED: When map-match fails and trace is sparse (≤ 5 points), use OSRM route API
+        // to get road-following directions between waypoints instead of straight lines
+        if (offlineSmoothed.length <= 5) {
+          final routedPath = await _fetchRoutedPath(offlineSmoothed);
+          if (routedPath != null && routedPath.points.isNotEmpty) {
+            state = HistoryMapState(
+              selectedDate: date,
+              availableRides: availableRides,
+              selectedRide: ride,
+              packages: packages,
+              routePoints: routedPath.points,
+              distanceMeters: routedPath.distance,
+              duration: duration,
+              isLoading: false,
+              deliveryStats: deliveryStats,
+              deliverySequence: deliverySequence,
+            );
+            return;
+          }
+        }
+
         // Offline primary fallback: calculate distance along offline smoothed trace
         double dist = 0.0;
         for (int i = 0; i < offlineSmoothed.length - 1; i++) {
@@ -389,6 +410,51 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
       }
     } catch (e) {
       debugPrint('Error fetching map-matched route from OSRM: $e');
+    } finally {
+      client.close();
+    }
+    return null;
+  }
+
+  // CHANGED: Added OSRM route API fallback for sparse GPS traces to generate road-following directions
+  Future<HistoryMapRouteData?> _fetchRoutedPath(List<LatLng> waypoints) async {
+    if (waypoints.length < 2) return null;
+    final client = HttpClient();
+    try {
+      // OSRM route API accepts up to ~100 waypoints
+      final coordsString = waypoints.map((p) => '${p.longitude},${p.latitude}').join(';');
+      final uri = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/$coordsString'
+        '?overview=full&geometries=geojson'
+      );
+      final request = await client.getUrl(uri).timeout(const Duration(seconds: 4));
+      final response = await request.close();
+
+      if (response.statusCode == 200) {
+        final responseBody = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(responseBody) as Map<String, dynamic>;
+
+        if (json['code'] == 'Ok' && json['routes'] != null && (json['routes'] as List).isNotEmpty) {
+          final route = (json['routes'] as List).first as Map<String, dynamic>;
+          final distance = (route['distance'] as num? ?? 0.0).toDouble();
+          final geometry = route['geometry'] as Map<String, dynamic>;
+          final coordinates = geometry['coordinates'] as List<dynamic>;
+
+          final points = coordinates.map((coord) {
+            final list = coord as List<dynamic>;
+            return LatLng(
+              (list[1] as num).toDouble(),
+              (list[0] as num).toDouble(),
+            );
+          }).toList();
+
+          if (points.isNotEmpty) {
+            return HistoryMapRouteData(points: points, distance: distance);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching routed path from OSRM: $e');
     } finally {
       client.close();
     }

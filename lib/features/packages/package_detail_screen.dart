@@ -7,7 +7,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/database/db_helper.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/services/map_cache_service.dart';
@@ -48,25 +48,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
   // CHANGED: GlobalKey to interact with the PackageFormState
   final GlobalKey<PackageFormState> _formKey = GlobalKey<PackageFormState>();
 
-  Future<void> _makePhoneCall(String phoneNumber) async {
-    final Uri launchUri = Uri(
-      scheme: 'tel',
-      path: phoneNumber,
-    );
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri);
-    }
-  }
 
-  Future<void> _sendSMS(String phoneNumber) async {
-    final Uri launchUri = Uri(
-      scheme: 'sms',
-      path: phoneNumber,
-    );
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri);
-    }
-  }
 
   @override
   void initState() {
@@ -514,62 +496,6 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                             Text(
                               p.receiverPhone!,
                               style: TextStyle(color: tokens.textMuted, fontSize: 13, fontWeight: FontWeight.w600),
-                            ),
-                            const Spacer(),
-                            // Quick Call Button
-                            GestureDetector(
-                              onTap: () => _makePhoneCall(p.receiverPhone!),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: tokens.surfaceAlt,
-                                  border: Border.all(color: tokens.border, width: 1.5),
-                                  borderRadius: BorderRadius.zero,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: tokens.shadowColor,
-                                      offset: const Offset(1, 1),
-                                      blurRadius: 0,
-                                    )
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.phone_in_talk_rounded, size: 12, color: tokens.accent),
-                                    const SizedBox(width: 4),
-                                    const Text('CALL', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Quick SMS Button
-                            GestureDetector(
-                              onTap: () => _sendSMS(p.receiverPhone!),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: tokens.surfaceAlt,
-                                  border: Border.all(color: tokens.border, width: 1.5),
-                                  borderRadius: BorderRadius.zero,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: tokens.shadowColor,
-                                      offset: const Offset(1, 1),
-                                      blurRadius: 0,
-                                    )
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.sms_rounded, size: 12, color: tokens.accent),
-                                    const SizedBox(width: 4),
-                                    const Text('SMS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
                             ),
                           ],
                         ),

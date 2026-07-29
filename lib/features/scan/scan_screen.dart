@@ -856,9 +856,10 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                   ),
                                   const SizedBox(width: 14),
                                   GestureDetector(
+                                    // CHANGED: Use goBranch(0) to switch to Packages tab after batch save instead of router.go/pop which doesn't work on shell tabs
                                     onTap: () async {
                                       final messenger = ScaffoldMessenger.of(context);
-                                      final router = GoRouter.of(context);
+                                      final shell = StatefulNavigationShell.of(context);
                                       await ref.read(scanStateNotifierProvider.notifier).commitBatch();
                                       if (mounted) {
                                         messenger.showSnackBar(
@@ -867,11 +868,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                             behavior: SnackBarBehavior.floating,
                                           ),
                                         );
-                                        if (router.canPop()) {
-                                          router.pop();
-                                        } else {
-                                          router.go('/packages');
-                                        }
+                                        shell.goBranch(0);
                                       }
                                     },
                                     child: Text(
