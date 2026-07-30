@@ -1680,6 +1680,9 @@ class DbHelper {
       AND (SELECT COUNT(*) FROM delivery_attempts WHERE package_id = p.id) > 1
     ''')) ?? 0;
     
+    final latestRow = await db.rawQuery("SELECT MAX(delivered_at) as max_date FROM packages WHERE status = 'delivered'");
+    final latestStr = latestRow.isNotEmpty ? latestRow.first['max_date'] as String? : null;
+
     return {
       'totalPackages': totalPackages,
       'successPackages': successPackages,
@@ -1695,6 +1698,7 @@ class DbHelper {
       'earlyMorning': earlyMorning,
       'night': night,
       'multiAttempt': multiAttempt,
+      'latestDeliveredAt': latestStr,
     };
   }
 

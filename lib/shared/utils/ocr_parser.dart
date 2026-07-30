@@ -127,6 +127,22 @@ class OcrParser {
     final String text = filteredLines.map((l) => l.text).join('\n');
     if (text.isEmpty) return OcrParsedResult();
 
+    // Pre-detection: Task Details screenshot format (delivery app)
+    // Detected by presence of "Waybill number" + "client:" + "COD:" markers
+    final lowerText = text.toLowerCase();
+    final isTaskDetailsFormat = lowerText.contains('waybill') &&
+        lowerText.contains('client') &&
+        lowerText.contains('cod');
+
+    if (isTaskDetailsFormat) {
+      return _parseTaskDetailsFormat(
+        text,
+        knownBarangays: knownBarangays,
+        knownCities: knownCities,
+        candidateTrackingNumbers: candidateTrackingNumbers,
+      );
+    }
+
     String? parsedTrackingNumber;
     String? parsedName;
     String? parsedPhone;
@@ -356,6 +372,194 @@ class OcrParser {
       phone: parsedPhone,
       codAmount: parsedCodAmount,
       paymentType: (parsedCodAmount != null && parsedCodAmount > 0) ? 'cod_cash' : 'prepaid',
+      street: parsedStreet,
+      zone: parsedZone,
+      barangay: parsedBarangay,
+      city: parsedCity,
+    );
+  }
+
+  /// Parses delivery app "Task details" screenshot format.
+  /// Expected structure:
+  ///   To    `full address`
+  ///   Waybill number    `tracking number`
+  ///   client:    `client name`
+  ///   COD:    `amount`
+  static OcrParsedResult _parseTaskDetailsFormat(
+    String text, {
+    List<String> knownBarangays = const [],
+    List<String> knownCities = const [],
+    List<String> candidateTrackingNumbers = const [],
+  }) {
+    final lines = text.split('\n');
+    String? parsedTrackingNumber;
+    String? parsedName;
+    double? parsedCodAmount;
+    String? parsedStreet;
+    String? parsedZone;
+    String? parsedBarangay;
+    String? parsedCity;
+    String? toAddressText;
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+      final lower = trimmed.toLowerCase();
+
+      // Parse "Waybill number" → trackingNumber
+      if (lower.startsWith('waybill')) {
+        final waybillRegex = RegExp(
+          r'waybill\s*(?:number|no\.?|#)?\s*[:=]?\s*(.+)',
+          caseSensitive: false,
+        );
+        final match = waybillRegex.firstMatch(trimmed);
+        if (match != null) {
+          parsedTrackingNumber = match.group(1)?.trim();
+        }
+      }
+
+      // Parse "client:" → name (strip trailing non-alphanumeric junk like ;-&)
+      else if (lower.startsWith('client')) {
+        final clientRegex = RegExp(
+          r'client\s*[:=]\s*(.+)',
+          caseSensitive: false,
+        );
+        final match = clientRegex.firstMatch(trimmed);
+        if (match != null) {
+          var rawName = match.group(1)?.trim() ?? '';
+          // Strip trailing non-alphanumeric/space junk (e.g. ";-&")
+          rawName = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9\s.]+$'), '').trim();
+          if (rawName.isNotEmpty) {
+            parsedName = rawName;
+          }
+        }
+      }
+
+      // Parse "COD:" → codAmount (0 = prepaid, >0 = cod_cash)
+      else if (lower.startsWith('cod')) {
+        final codRegex = RegExp(
+          r'cod\s*[:=]\s*([0-9,]+(?:\.[0-9]{1,2})?)',
+          caseSensitive: false,
+        );
+        final match = codRegex.firstMatch(trimmed);
+        if (match != null) {
+          final amtStr = match.group(1)?.replaceAll(',', '');
+          if (amtStr != null) {
+            parsedCodAmount = double.tryParse(amtStr);
+          }
+        }
+      }
+
+      // Parse "To" → full address text for subsequent address parsing
+      else if (lower.startsWith('to') && toAddressText == null) {
+        // Strip "To" prefix (may be "To:", "To ", etc.)
+        final toRegex = RegExp(r'^to\s*[:=]?\s*', caseSensitive: false);
+        final addressContent = trimmed.replaceFirst(toRegex, '').trim();
+        if (addressContent.isNotEmpty) {
+          toAddressText = addressContent;
+        }
+      }
+    }
+
+    // If candidate tracking numbers provided, try matching against them
+    if (candidateTrackingNumbers.isNotEmpty && parsedTrackingNumber != null) {
+      final trkCleaned = parsedTrackingNumber.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      bool matched = false;
+      for (final candidate in candidateTrackingNumbers) {
+        final candidateCleaned = candidate.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+        if (candidateCleaned.isNotEmpty && trkCleaned.contains(candidateCleaned)) {
+          parsedTrackingNumber = candidate;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        // Keep the raw waybill number as-is if no candidate matched
+      }
+    }
+
+    // Parse address components from "To" line using existing logic
+    if (toAddressText != null && toAddressText.isNotEmpty) {
+      // Zone parsing
+      final zoneRegex = RegExp(r'\b(?:zone|purok|puk|pk)\s*([0-9a-zA-Z]+(?:\s*[-]?\s*[0-9a-zA-Z]+)*)', caseSensitive: false);
+      final zoneMatch = zoneRegex.firstMatch(toAddressText);
+      if (zoneMatch != null) {
+        final rawValue = zoneMatch.group(1)?.trim() ?? '';
+        final cleanedValue = rawValue.replaceAllMapped(
+          RegExp(r'(\d+)\s*[-]?\s*([a-zA-Z])\b'),
+          (match) => '${match.group(1)}${match.group(2)!.toUpperCase()}',
+        ).replaceAll(RegExp(r'\s*[-]\s*'), '').toUpperCase();
+        final tempZone = 'Zone $cleanedValue';
+        if (RegExp(r'^Zone \d+[A-Z]?$', caseSensitive: false).hasMatch(tempZone)) {
+          parsedZone = tempZone;
+        }
+      }
+
+      // Barangay search
+      const defaultBarangays = [
+        'Ani-e', 'Cabacungan', 'Gumaod', 'Hinaplanan', 'Kalawihon', 'Lanise',
+        'Libertad', 'Madaguing', 'Malagana', 'Minsacopa', 'Patrocinio', 'Plaridel',
+        'Poblacion', 'Punong', 'Rizal', 'Santa Cruz', 'Tamboboan', 'Tipolohon'
+      ];
+      final barangaysToSearch = knownBarangays.isNotEmpty ? knownBarangays : defaultBarangays;
+      for (final b in barangaysToSearch) {
+        final escB = RegExp.escape(b);
+        final brgyRegex = RegExp('\\b$escB\\b', caseSensitive: false);
+        if (brgyRegex.hasMatch(toAddressText)) {
+          parsedBarangay = b;
+          break;
+        }
+      }
+
+      // City search
+      final citiesToSearch = knownCities.isNotEmpty ? knownCities : ['Claveria', 'Gingoog', 'Cagayan de Oro'];
+      for (final c in citiesToSearch) {
+        if (c.isNotEmpty && toAddressText.toLowerCase().contains(c.toLowerCase())) {
+          parsedCity = c;
+          break;
+        }
+      }
+
+      // Street extraction: take the portion before zone/barangay/city markers
+      var streetCandidate = toAddressText;
+      // Remove zone text
+      if (parsedZone != null) {
+        streetCandidate = streetCandidate.replaceAll(
+          RegExp(r'\b(?:zone|purok|puk|pk)\s*[0-9a-zA-Z]+', caseSensitive: false), '',
+        );
+      }
+      // Remove barangay name
+      if (parsedBarangay != null && parsedBarangay.isNotEmpty) {
+        streetCandidate = streetCandidate.replaceAll(
+          RegExp(RegExp.escape(parsedBarangay), caseSensitive: false), '',
+        );
+      }
+      // Remove city name
+      if (parsedCity != null && parsedCity.isNotEmpty) {
+        streetCandidate = streetCandidate.replaceAll(
+          RegExp(RegExp.escape(parsedCity), caseSensitive: false), '',
+        );
+      }
+      // Remove province-like trailing text (e.g. "Misamis Oriental")
+      streetCandidate = streetCandidate.replaceAll(
+        RegExp(r'\b(?:Misamis\s+Oriental|Misamis\s+Occidental|Bukidnon|Lanao\s+del\s+Norte|Lanao\s+del\s+Sur)\b', caseSensitive: false), '',
+      );
+      // Clean up separators and whitespace
+      streetCandidate = streetCandidate.replaceAll(RegExp(r'[,\s\-]+$|^[,\s\-]+'), '').trim();
+      streetCandidate = streetCandidate.replaceAll(RegExp(r',\s*,'), ',').trim();
+      streetCandidate = streetCandidate.replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '').trim();
+      if (streetCandidate.isNotEmpty) {
+        parsedStreet = streetCandidate;
+      }
+    }
+
+    // COD = 0 means prepaid
+    final bool isPrepaid = parsedCodAmount == null || parsedCodAmount == 0.0;
+
+    return OcrParsedResult(
+      trackingNumber: parsedTrackingNumber,
+      name: parsedName,
+      codAmount: isPrepaid ? null : parsedCodAmount,
+      paymentType: isPrepaid ? 'prepaid' : 'cod_cash',
       street: parsedStreet,
       zone: parsedZone,
       barangay: parsedBarangay,

@@ -208,20 +208,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: rankColor.withValues(alpha: 0.15),
-                              border: Border.all(color: rankColor, width: 2.0),
-                              borderRadius: BorderRadius.zero,
-                            ),
-                            child: Text(
-                              rank.toUpperCase(),
-                              style: TextStyle(
-                                color: tokens.text,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                                letterSpacing: 0.8,
+                          // CHANGED: Made rank chip interactive to open Rank details modal with rank history, current rank highlight, progress, and requirements
+                          GestureDetector(
+                            onTap: () {
+                              _recordRankAchievementDate(rank);
+                              _showRankDetailsModal(context, rank, performanceScore, successCount, tokens);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: rankColor.withValues(alpha: 0.15),
+                                border: Border.all(color: rankColor, width: 2.0),
+                                borderRadius: BorderRadius.zero,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    rank.toUpperCase(),
+                                    style: TextStyle(
+                                      color: tokens.text,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(Icons.info_outline_rounded, size: 14, color: rankColor),
+                                ],
                               ),
                             ),
                           ),
@@ -834,39 +848,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildDynamicBadgeIcon(RiderBadge badge, AppColorTokens tokens) {
-    return Tooltip(
-      message: '${badge.title}\n${badge.description}',
-      child: Container(
-        width: 78,
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          color: tokens.accentSoft,
-          border: Border.all(
-            color: tokens.accent,
-            width: 1.5,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              badge.icon,
-              size: 20,
+    return GestureDetector(
+      onTap: () => _showBadgeDetailDialog(context, badge, tokens),
+      child: Tooltip(
+        message: '${badge.title}\n${badge.description}',
+        child: Container(
+          width: 78,
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: tokens.accentSoft,
+            border: Border.all(
               color: tokens.accent,
+              width: 1.5,
             ),
-            const SizedBox(height: 4),
-            Text(
-              badge.title,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                color: tokens.text,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                badge.icon,
+                size: 20,
+                color: tokens.accent,
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                badge.title,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: tokens.text,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1216,14 +1233,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             color: tokens.text,
                           ),
                         ),
-                        Text(
-                          badge.category.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: tokens.textSubtle,
-                            letterSpacing: 0.5,
-                          ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: tokens.accentSoft,
+                                border: Border.all(color: tokens.accent, width: 1),
+                              ),
+                              child: Text(
+                                badge.category.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: tokens.accent,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppStatusColors.success.withValues(alpha: 0.15),
+                                border: Border.all(color: AppStatusColors.success, width: 1),
+                              ),
+                              child: Text(
+                                '+${badge.points} PTS',
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppStatusColors.success,
+                                  fontFamily: 'JetBrains Mono',
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1241,6 +1287,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 16),
               const Divider(height: 1),
               const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Status:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.textSubtle,
+                    ),
+                  ),
+                  Text(
+                    badge.unlocked ? 'UNLOCKED' : 'LOCKED',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: badge.unlocked ? AppStatusColors.success : AppStatusColors.error,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Achieved On:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.textSubtle,
+                    ),
+                  ),
+                  Text(
+                    badge.unlocked
+                        ? (badge.unlockedAt != null
+                            ? DateFormat('MMM dd, yyyy · hh:mm a').format(badge.unlockedAt!)
+                            : 'Unlocked')
+                        : 'In Progress',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: badge.unlocked ? tokens.text : tokens.textSubtle,
+                      fontFamily: 'JetBrains Mono',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1308,4 +1404,328 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
+
+  // CHANGED: Persists rank unlock timestamp in SharedPreferences when achieved
+  Future<void> _recordRankAchievementDate(String rank) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final ranksOrder = ['Bronze Runner', 'Silver Courier', 'Gold Speedster', 'Platinum Elite'];
+    final currentIndex = ranksOrder.indexOf(rank);
+    final nowStr = DateTime.now().toIso8601String();
+
+    for (int i = 0; i <= currentIndex; i++) {
+      if (i < 0) continue;
+      final rName = ranksOrder[i];
+      final key = 'rank_achieved_$rName';
+      if (!prefs.containsKey(key)) {
+        await prefs.setString(key, nowStr);
+      }
+    }
+  }
+
+  // CHANGED: Displays interactive modal showing all ranks, requirements, current rank highlight, progress to next rank, and achieved timestamps
+  void _showRankDetailsModal(
+    BuildContext context,
+    String currentRank,
+    int performanceScore,
+    int successCount,
+    AppColorTokens tokens,
+  ) {
+    final prefs = ref.read(sharedPreferencesProvider);
+
+    final ranks = [
+      _RankDetailSpec('Bronze Runner', const Color(0xFFCD7F32), 'Default starting tier (< 60 PTS)', 0, 0, 'Initial tier for all active delivery riders.'),
+      _RankDetailSpec('Silver Courier', const Color(0xFFC0C0C0), 'Score ≥ 60 PTS & ≥ 2 deliveries', 60, 2, 'Earned by completing early deliveries reliably.'),
+      _RankDetailSpec('Gold Speedster', const Color(0xFFFFD700), 'Score ≥ 80 PTS & ≥ 5 deliveries', 80, 5, 'High performance and consistent delivery speed.'),
+      _RankDetailSpec('Platinum Elite', const Color(0xFFE5E4E2), 'Score ≥ 90 PTS & ≥ 10 deliveries', 90, 10, 'Top-tier master courier with outstanding service.'),
+    ];
+
+    final ranksOrder = ranks.map((r) => r.name).toList();
+    final currentIndex = ranksOrder.indexOf(currentRank);
+    final nextRank = currentIndex < ranks.length - 1 ? ranks[currentIndex + 1] : null;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.85,
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            border: Border(
+              top: BorderSide(color: tokens.border, width: 2),
+              left: BorderSide(color: tokens.border, width: 2),
+              right: BorderSide(color: tokens.border, width: 2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: tokens.textSubtle.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'RIDER RANK & PROGRESS',
+                      style: TextStyle(
+                        fontFamily: 'Syne',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.text,
+                      ),
+                    ),
+                    Text(
+                      '$performanceScore PTS',
+                      style: TextStyle(
+                        fontFamily: 'JetBrains Mono',
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 16),
+              
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Next Rank Progress Section
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: tokens.surfaceAlt,
+                        border: Border.all(color: tokens.border, width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PROGRESS TO NEXT RANK',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: tokens.textSubtle,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          if (nextRank != null) ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Next: ${nextRank.name}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: nextRank.color,
+                                  ),
+                                ),
+                                Text(
+                                  '${(nextRank.minScore - performanceScore).clamp(0, 100)} PTS needed',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: tokens.textSubtle,
+                                    fontFamily: 'JetBrains Mono',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: (performanceScore / nextRank.minScore).clamp(0.0, 1.0),
+                              backgroundColor: tokens.border.withValues(alpha: 0.2),
+                              valueColor: AlwaysStoppedAnimation<Color>(nextRank.color),
+                            ),
+                          ] else ...[
+                            Text(
+                              '👑 MAXIMUM RANK ACHIEVED! Top courier tier unlocked.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: tokens.accent,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    Text(
+                      'ALL AVAILABLE RANKS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.textSubtle,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    ...ranks.map((rSpec) {
+                      final isCurrent = rSpec.name == currentRank;
+                      final rIndex = ranksOrder.indexOf(rSpec.name);
+                      final isAchieved = rIndex <= currentIndex;
+                      final dateStr = prefs.getString('rank_achieved_${rSpec.name}');
+                      DateTime? achievedDt;
+                      if (dateStr != null) {
+                        achievedDt = DateTime.tryParse(dateStr);
+                      }
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isCurrent
+                              ? rSpec.color.withValues(alpha: 0.15)
+                              : (isAchieved ? tokens.surfaceAlt : tokens.bg),
+                          border: Border.all(
+                            color: isCurrent ? rSpec.color : tokens.border,
+                            width: isCurrent ? 2.5 : 1.5,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: rSpec.color,
+                                    borderRadius: BorderRadius.zero,
+                                  ),
+                                  child: Text(
+                                    rSpec.name.toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (isCurrent)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: tokens.accent,
+                                      borderRadius: BorderRadius.zero,
+                                    ),
+                                    child: const Text(
+                                      'CURRENT RANK',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                  ),
+                                const Spacer(),
+                                Icon(
+                                  isAchieved ? Icons.check_circle : Icons.lock_outline,
+                                  size: 18,
+                                  color: isAchieved ? rSpec.color : tokens.textSubtle,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              rSpec.desc,
+                              style: TextStyle(fontSize: 12, color: tokens.text),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Requirements:',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: tokens.textSubtle,
+                                  ),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    rSpec.req,
+                                    textAlign: TextAlign.end,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: tokens.text,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Achieved On:',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: tokens.textSubtle,
+                                  ),
+                                ),
+                                Text(
+                                  isAchieved
+                                      ? (achievedDt != null
+                                          ? DateFormat('MMM dd, yyyy · hh:mm a').format(achievedDt)
+                                          : 'Achieved')
+                                      : 'Locked',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isAchieved ? rSpec.color : tokens.textSubtle,
+                                    fontFamily: 'JetBrains Mono',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RankDetailSpec {
+  final String name;
+  final Color color;
+  final String req;
+  final int minScore;
+  final int minDeliveries;
+  final String desc;
+
+  _RankDetailSpec(this.name, this.color, this.req, this.minScore, this.minDeliveries, this.desc);
 }

@@ -96,6 +96,7 @@ class PackagesState {
 AsyncValue<Position>? activeRideLocation(Ref ref) {
   final activeRide = ref.watch(packagesNotifierProvider.select((s) => s.activeRide));
   if (activeRide == null) return null;
+  ref.keepAlive();
   return ref.watch(locationStreamProvider);
 }
 
