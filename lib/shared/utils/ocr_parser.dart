@@ -1,6 +1,9 @@
 import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+// CHANGED: Import DbHelper to access persistent learned OCR format templates
+import '../../core/database/db_helper.dart';
 
 class OcrParsedResult {
   final String? trackingNumber;
@@ -91,6 +94,8 @@ class OcrParser {
     List<String> knownBarangays = const [],
     List<String> knownCities = const [],
     List<String> candidateTrackingNumbers = const [],
+    // CHANGED: Support passing custom trained ML format templates
+    List<LearnedOcrFormat> learnedFormats = const [],
   }) {
     final List<TextLine> rawLines = [];
     for (final block in recognizedText.blocks) {
@@ -126,6 +131,16 @@ class OcrParser {
 
     final String text = filteredLines.map((l) => l.text).join('\n');
     if (text.isEmpty) return OcrParsedResult();
+
+    // CHANGED: Check learned custom format templates first if available
+    if (learnedFormats.isNotEmpty) {
+      for (final lFormat in learnedFormats) {
+        final learnedResult = _parseLearnedFormat(text, lFormat);
+        if (learnedResult != null) {
+          return learnedResult;
+        }
+      }
+    }
 
     // Pre-detection: Task Details screenshot format (delivery app)
     // Detected by presence of "Waybill number" + "client:" + "COD:" markers
@@ -565,5 +580,64 @@ class OcrParser {
       barangay: parsedBarangay,
       city: parsedCity,
     );
+  }
+
+  // CHANGED: Custom learned format parser that extracts fields based on stored anchor keywords
+  static OcrParsedResult? _parseLearnedFormat(String text, LearnedOcrFormat format) {
+    try {
+      final Map<String, dynamic> anchors = jsonDecode(format.formatPattern);
+      final lines = text.split('\n');
+      String? tracking;
+      String? name;
+      String? phone;
+      String? street;
+      double? cod;
+
+      final trackingAnchor = anchors['tracking_anchor'] as String?;
+      final nameAnchor = anchors['name_anchor'] as String?;
+      final phoneAnchor = anchors['phone_anchor'] as String?;
+      final streetAnchor = anchors['street_anchor'] as String?;
+      final codAnchor = anchors['cod_anchor'] as String?;
+
+      for (int i = 0; i < lines.length; i++) {
+        final line = lines[i];
+        final lower = line.toLowerCase();
+
+        if (trackingAnchor != null && trackingAnchor.isNotEmpty && lower.contains(trackingAnchor.toLowerCase())) {
+          final val = line.substring(lower.indexOf(trackingAnchor.toLowerCase()) + trackingAnchor.length).trim();
+          tracking = val.isNotEmpty ? val : (i + 1 < lines.length ? lines[i + 1].trim() : null);
+        }
+        if (nameAnchor != null && nameAnchor.isNotEmpty && lower.contains(nameAnchor.toLowerCase())) {
+          final val = line.substring(lower.indexOf(nameAnchor.toLowerCase()) + nameAnchor.length).trim();
+          name = val.isNotEmpty ? val : (i + 1 < lines.length ? lines[i + 1].trim() : null);
+        }
+        if (phoneAnchor != null && phoneAnchor.isNotEmpty && lower.contains(phoneAnchor.toLowerCase())) {
+          final val = line.substring(lower.indexOf(phoneAnchor.toLowerCase()) + phoneAnchor.length).trim();
+          phone = val.isNotEmpty ? val : (i + 1 < lines.length ? lines[i + 1].trim() : null);
+        }
+        if (streetAnchor != null && streetAnchor.isNotEmpty && lower.contains(streetAnchor.toLowerCase())) {
+          final val = line.substring(lower.indexOf(streetAnchor.toLowerCase()) + streetAnchor.length).trim();
+          street = val.isNotEmpty ? val : (i + 1 < lines.length ? lines[i + 1].trim() : null);
+        }
+        if (codAnchor != null && codAnchor.isNotEmpty && lower.contains(codAnchor.toLowerCase())) {
+          final val = line.substring(lower.indexOf(codAnchor.toLowerCase()) + codAnchor.length).trim();
+          final numStr = (val.isNotEmpty ? val : (i + 1 < lines.length ? lines[i + 1].trim() : '')).replaceAll(RegExp(r'[^0-9.]'), '');
+          cod = double.tryParse(numStr);
+        }
+      }
+
+      if (tracking != null || name != null || phone != null || street != null || cod != null) {
+        return OcrParsedResult(
+          trackingNumber: tracking,
+          name: name,
+          phone: phone,
+          street: street,
+          codAmount: cod,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error parsing learned format ${format.name}: $e');
+    }
+    return null;
   }
 }

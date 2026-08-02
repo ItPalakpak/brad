@@ -12,6 +12,8 @@ import '../../shared/widgets/offset_shadow_button.dart';
 import '../../shared/widgets/brand_logo.dart';
 import '../../shared/utils/ocr_parser.dart';
 import 'scan_provider.dart';
+// CHANGED: Import TrainOcrModal for training custom ML OCR format templates
+import 'train_ocr_modal.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -857,7 +859,26 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 14),
+                                  const SizedBox(width: 12),
+                                  // CHANGED: Added TRAIN MODEL button to launch TrainOcrModal for learning custom label formats
+                                  GestureDetector(
+                                    onTap: () => TrainOcrModal.show(context),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.model_training_outlined, size: 14, color: tokens.textMuted),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'TRAIN MODEL',
+                                          style: TextStyle(
+                                            color: tokens.textMuted,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
                                   GestureDetector(
                                     // CHANGED: Use goBranch(0) to switch to Packages tab after batch save instead of router.go/pop which doesn't work on shell tabs
                                     onTap: () async {

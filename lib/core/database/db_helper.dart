@@ -415,6 +415,39 @@ class CustomPerimeter {
   }
 }
 
+// CHANGED: Added LearnedOcrFormat model for persistent custom ML OCR label format learning templates
+class LearnedOcrFormat {
+  final String id;
+  final String name;
+  final String formatPattern; // JSON encoded map of field anchors
+  final DateTime createdAt;
+
+  LearnedOcrFormat({
+    required this.id,
+    required this.name,
+    required this.formatPattern,
+    required this.createdAt,
+  });
+
+  factory LearnedOcrFormat.fromMap(Map<String, dynamic> map) {
+    return LearnedOcrFormat(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      formatPattern: map['format_pattern'] as String,
+      createdAt: DateTime.parse(map['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'format_pattern': formatPattern,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
 // --- DATABASE HELPER ---
 
 class DbHelper {
@@ -458,7 +491,8 @@ class DbHelper {
 
     return await openDatabase(
       path,
-      version: 9,
+      // CHANGED: Database version 10 includes learned_ocr_formats table
+      version: 10,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -615,6 +649,17 @@ class DbHelper {
     }
     if (oldVersion < 9) {
       await _safeExecute(db, 'ALTER TABLE packages ADD COLUMN signature_path TEXT', 'v9 add signature_path');
+    }
+    // CHANGED: v10 migration for learned_ocr_formats table
+    if (oldVersion < 10) {
+      await _safeExecute(db, '''
+        CREATE TABLE IF NOT EXISTS learned_ocr_formats (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          format_pattern TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''', 'v10 create learned_ocr_formats');
     }
   }
 
@@ -1934,6 +1979,31 @@ class DbHelper {
       where: 'ride_id = ?',
       whereArgs: [rideId],
       orderBy: 'timestamp ASC',
+    );
+  }
+
+  // CHANGED: Added CRUD methods for persistent custom ML OCR label format learning templates
+  Future<int> insertLearnedOcrFormat(LearnedOcrFormat format) async {
+    final db = await instance.database;
+    return await db.insert(
+      'learned_ocr_formats',
+      format.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<LearnedOcrFormat>> getLearnedOcrFormats() async {
+    final db = await instance.database;
+    final maps = await db.query('learned_ocr_formats', orderBy: 'created_at DESC');
+    return maps.map((m) => LearnedOcrFormat.fromMap(m)).toList();
+  }
+
+  Future<int> deleteLearnedOcrFormat(String id) async {
+    final db = await instance.database;
+    return await db.delete(
+      'learned_ocr_formats',
+      where: 'id = ?',
+      whereArgs: [id],
     );
   }
 }
