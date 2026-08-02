@@ -7,7 +7,7 @@ part of 'history_map_provider.dart';
 // **************************************************************************
 
 String _$historyMapNotifierHash() =>
-    r'ee3dc6f1b0b38e4463d0138928eafc093db53835';
+    r'8b2ad9a1f5292857dc72a8654674d34ba4d3f608';
 
 /// See also [HistoryMapNotifier].
 @ProviderFor(HistoryMapNotifier)

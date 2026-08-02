@@ -7,7 +7,7 @@ part of 'packages_provider.dart';
 // **************************************************************************
 
 String _$activeRideLocationHash() =>
-    r'd4f0e1c2ff2d6a3f50a69701e9da03a5af2f3b76';
+    r'9ea892ec947f6916d1de13640329dc9d56b09a98';
 
 /// See also [activeRideLocation].
 @ProviderFor(activeRideLocation)
@@ -25,7 +25,7 @@ final activeRideLocationProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveRideLocationRef = AutoDisposeProviderRef<AsyncValue<Position>?>;
-String _$packagesNotifierHash() => r'1eb996b907eb1b7d57a26cd5392071a1686893b2';
+String _$packagesNotifierHash() => r'8709c6533e5504c874496e15637bc5e1e3f77827';
 
 /// See also [PackagesNotifier].
 @ProviderFor(PackagesNotifier)
