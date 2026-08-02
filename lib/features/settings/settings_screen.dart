@@ -131,10 +131,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
     final performanceScore = scoreRaw.clamp(0.0, 100.0).round();
 
-    // Determine tier rank
+    // CHANGED: Expanded tier rank determination to include 4 new higher ranks (Diamond Vanguard, Titanium Legend, Crown Sovereign, Mythic Apex)
     String rank = 'Bronze Runner';
     Color rankColor = const Color(0xFFCD7F32); // Bronze
-    if (performanceScore >= 90 && successCount >= 10) {
+    if (performanceScore >= 99 && successCount >= 200) {
+      rank = 'Mythic Apex';
+      rankColor = const Color(0xFF9400D3); // Mythic Purple
+    } else if (performanceScore >= 98 && successCount >= 100) {
+      rank = 'Crown Sovereign';
+      rankColor = const Color(0xFFFFB300); // Amber Gold
+    } else if (performanceScore >= 96 && successCount >= 50) {
+      rank = 'Titanium Legend';
+      rankColor = const Color(0xFF87CEEB); // Sky Blue / Titanium
+    } else if (performanceScore >= 93 && successCount >= 25) {
+      rank = 'Diamond Vanguard';
+      rankColor = const Color(0xFFB9F2FF); // Diamond Cyan
+    } else if (performanceScore >= 90 && successCount >= 10) {
       rank = 'Platinum Elite';
       rankColor = const Color(0xFFE5E4E2); // Platinum
     } else if (performanceScore >= 80 && successCount >= 5) {
@@ -1438,10 +1450,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // CHANGED: Persists rank unlock timestamp in SharedPreferences when achieved
+  // CHANGED: Persists rank unlock timestamp in SharedPreferences when achieved (updated for all 8 ranks)
   Future<void> _recordRankAchievementDate(String rank) async {
     final prefs = ref.read(sharedPreferencesProvider);
-    final ranksOrder = ['Bronze Runner', 'Silver Courier', 'Gold Speedster', 'Platinum Elite'];
+    final ranksOrder = [
+      'Bronze Runner',
+      'Silver Courier',
+      'Gold Speedster',
+      'Platinum Elite',
+      'Diamond Vanguard',
+      'Titanium Legend',
+      'Crown Sovereign',
+      'Mythic Apex'
+    ];
     final currentIndex = ranksOrder.indexOf(rank);
     final nowStr = DateTime.now().toIso8601String();
 
@@ -1455,7 +1476,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  // CHANGED: Displays interactive modal showing all ranks, requirements, current rank highlight, progress to next rank, and achieved timestamps
+  // CHANGED: Displays interactive modal showing all 8 ranks, requirements, current rank highlight, progress to next rank, and achieved timestamps
   void _showRankDetailsModal(
     BuildContext context,
     String currentRank,
@@ -1470,6 +1491,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _RankDetailSpec('Silver Courier', const Color(0xFFC0C0C0), 'Score ≥ 60 PTS & ≥ 2 deliveries', 60, 2, 'Earned by completing early deliveries reliably.'),
       _RankDetailSpec('Gold Speedster', const Color(0xFFFFD700), 'Score ≥ 80 PTS & ≥ 5 deliveries', 80, 5, 'High performance and consistent delivery speed.'),
       _RankDetailSpec('Platinum Elite', const Color(0xFFE5E4E2), 'Score ≥ 90 PTS & ≥ 10 deliveries', 90, 10, 'Top-tier master courier with outstanding service.'),
+      _RankDetailSpec('Diamond Vanguard', const Color(0xFFB9F2FF), 'Score ≥ 93 PTS & ≥ 25 deliveries', 93, 25, 'Vanguard rider with stellar precision and efficiency.'),
+      _RankDetailSpec('Titanium Legend', const Color(0xFF87CEEB), 'Score ≥ 96 PTS & ≥ 50 deliveries', 96, 50, 'Legendary endurance and flawless delivery execution.'),
+      _RankDetailSpec('Crown Sovereign', const Color(0xFFFFB300), 'Score ≥ 98 PTS & ≥ 100 deliveries', 98, 100, 'Sovereign rider with unmatched speed and customer rapport.'),
+      _RankDetailSpec('Mythic Apex', const Color(0xFF9400D3), 'Score ≥ 99 PTS & ≥ 200 deliveries', 99, 200, 'Apex master rider representing the absolute pinnacle of delivery excellence.'),
     ];
 
     final ranksOrder = ranks.map((r) => r.name).toList();
