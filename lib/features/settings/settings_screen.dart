@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -33,8 +35,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void initState() {
     super.initState();
     final prefs = ref.read(sharedPreferencesProvider);
+    var savedName = prefs.getString('rider_name');
+    
+    // CHANGED: Auto-restore rider_name from public storage across app uninstalls if SharedPreferences was wiped
+    if ((savedName == null || savedName == 'Rider') && Platform.isAndroid) {
+      try {
+        final profileFile = File('/storage/emulated/0/Download/BRAD_rider_profile.json');
+        if (profileFile.existsSync()) {
+          final data = jsonDecode(profileFile.readAsStringSync());
+          if (data is Map && data['rider_name'] != null && data['rider_name'].toString().isNotEmpty) {
+            savedName = data['rider_name'].toString();
+            prefs.setString('rider_name', savedName);
+          }
+        }
+      } catch (_) {}
+    }
+
     _nameController = TextEditingController(
-      text: prefs.getString('rider_name') ?? 'Rider',
+      text: savedName ?? 'Rider',
     );
     _proximityRadius = prefs.getDouble('proximity_radius') ?? 500.0;
     _isShiftActive = prefs.getBool('is_shift_active') ?? true;
@@ -49,6 +67,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _saveRiderName(String name) async {
     final prefs = ref.read(sharedPreferencesProvider);
     await prefs.setString('rider_name', name);
+
+    // CHANGED: Save persistent copy of rider_name to public storage to survive uninstalls
+    try {
+      if (Platform.isAndroid) {
+        final file = File('/storage/emulated/0/Download/BRAD_rider_profile.json');
+        await file.writeAsString(jsonEncode({'rider_name': name}));
+      }
+    } catch (_) {}
   }
 
   Future<void> _updateProximityRadius(double val) async {

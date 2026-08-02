@@ -350,14 +350,19 @@ class MapStateNotifier extends _$MapStateNotifier {
       // 5. Refresh packages provider so active package markers on map update immediately
       await ref.read(packagesNotifierProvider.notifier).refresh();
 
+      // CHANGED: Regenerate package markers with updated package coordinates and emit fresh archives list state
+      final packagesState = ref.read(packagesNotifierProvider);
+      final updatedMarkers = _generateMarkers(packagesState.packages);
+      final nearest = _findNearestPending(updatedMarkers, _userPosition);
+
       state = MapState(
-        markers: state.markers,
+        markers: updatedMarkers,
         userPosition: _userPosition,
         routePoints: state.routePoints,
         roadDistance: state.roadDistance,
         roadEta: state.roadEta,
-        nearestPackage: state.nearestPackage,
-        archives: _archives,
+        nearestPackage: nearest,
+        archives: List<ReceiverArchive>.from(_archives),
         showArchives: _showArchives,
         perimeters: _perimeters,
         showPerimeters: _showPerimeters,

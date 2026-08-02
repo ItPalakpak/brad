@@ -343,6 +343,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                             newLocation,
                           );
 
+                          // CHANGED: Move map camera to newly set archive pin location
+                          _mapController.move(newLocation, 17.5);
+
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -896,6 +899,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         MarkerLayer(
                           markers: mapState.archives.map((archive) {
                             return Marker(
+                              // CHANGED: Added unique ValueKey with coordinates so marker position updates on map rebuild
+                              key: ValueKey('archive_${archive.id}_${archive.lat}_${archive.lng}'),
                               point: LatLng(archive.lat, archive.lng),
                               width: 40,
                               height: 40,

@@ -612,12 +612,11 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                         child: p.lat != null && p.lng != null
                             ? Stack(
                                 children: [
-                                  // Mini non-interactive map
+                                  // CHANGED: Made preview map interactive so rider can drag and zoom while pin stays fixed at its location
                                   FlutterMap(
                                     options: MapOptions(
                                       initialCenter: LatLng(p.lat!, p.lng!),
                                       initialZoom: 14.5,
-                                      interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
                                     ),
                                     children: [
                                       TileLayer(
@@ -636,15 +635,6 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                                         ],
                                       ),
                                     ],
-                                  ),
-                                  // Click mask to prevent touch conflicts and enable click
-                                  Positioned.fill(
-                                    child: GestureDetector(
-                                      onTap: _pickLocationOnMap,
-                                      child: Container(
-                                        color: Colors.transparent,
-                                      ),
-                                    ),
                                   ),
                                   Positioned(
                                     bottom: 8,

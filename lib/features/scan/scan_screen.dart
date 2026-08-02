@@ -62,11 +62,14 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
   }
 
-  Future<void> _handleBarcodeScan(String code) async {
+  Future<void> _handleBarcodeScan(String rawCode) async {
     if (_isProcessingScan) return;
     setState(() {
       _isProcessingScan = true;
     });
+
+    // CHANGED: Automatically convert scanned tracking/waybill number to uppercase
+    final code = rawCode.toUpperCase();
 
     final scanState = ref.read(scanStateNotifierProvider);
 

@@ -1,8 +1,11 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:path_provider/path_provider.dart';
 
 part 'map_cache_service.g.dart';
 
@@ -15,8 +18,28 @@ class MapCacheService {
   static const _storeName = 'ridertrack_tiles';
 
   Future<void> init() async {
-    // Initialise caching system
-    await FMTCObjectBoxBackend().initialise();
+    // CHANGED: Initialise map tile cache backend in public persistent directory so tiles survive app uninstalls
+    Directory? persistentDir;
+    try {
+      if (Platform.isAndroid) {
+        final pubDownload = Directory('/storage/emulated/0/Download/BRAD_map_tiles');
+        if (!await pubDownload.exists()) {
+          await pubDownload.create(recursive: true);
+        }
+        if (await pubDownload.exists()) {
+          persistentDir = pubDownload;
+        }
+      } else if (!kIsWeb) {
+        final appDocDir = await getApplicationDocumentsDirectory();
+        persistentDir = Directory('${appDocDir.path}/BRAD_map_tiles');
+      }
+    } catch (e) {
+      debugPrint('Error creating persistent map tile directory: $e');
+    }
+
+    await FMTCObjectBoxBackend().initialise(
+      rootDirectory: persistentDir?.path,
+    );
     await FMTCStore(_storeName).manage.create();
   }
 
