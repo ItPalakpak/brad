@@ -844,9 +844,10 @@ class DbHelper {
     final p = package.copyWith(sortOrder: newSortOrder);
     final result = await db.insert('packages', p.toMap(), conflictAlgorithm: ConflictAlgorithm.fail);
 
-    if (p.lat != null && p.lng != null && p.receiverName != null && p.receiverName!.trim().isNotEmpty) {
+    // CHANGED: Update geo archive pin location if coordinates and either receiver name or phone are present
+    if (p.lat != null && p.lng != null && ((p.receiverName != null && p.receiverName!.trim().isNotEmpty) || (p.receiverPhone != null && p.receiverPhone!.trim().isNotEmpty))) {
       await upsertReceiverArchive(
-        name: p.receiverName!,
+        name: p.receiverName ?? '',
         phone: p.receiverPhone,
         street: p.street,
         zone: p.zone,
@@ -870,9 +871,10 @@ class DbHelper {
       whereArgs: [package.id],
     );
 
-    if (p.lat != null && p.lng != null && p.receiverName != null && p.receiverName!.trim().isNotEmpty) {
+    // CHANGED: Update geo archive pin location if coordinates and either receiver name or phone are present
+    if (p.lat != null && p.lng != null && ((p.receiverName != null && p.receiverName!.trim().isNotEmpty) || (p.receiverPhone != null && p.receiverPhone!.trim().isNotEmpty))) {
       await upsertReceiverArchive(
-        name: p.receiverName!,
+        name: p.receiverName ?? '',
         phone: p.receiverPhone,
         street: p.street,
         zone: p.zone,
@@ -1100,6 +1102,17 @@ class DbHelper {
     return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
+  // CHANGED: Helper to normalize phone numbers for accurate archive matching regardless of +63, leading 0, spaces, or dashes
+  String _normalizePhone(String phone) {
+    String digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('63') && digits.length == 12) {
+      digits = '0${digits.substring(2)}';
+    } else if (digits.length == 10 && digits.startsWith('9')) {
+      digits = '0$digits';
+    }
+    return digits;
+  }
+
   Future<void> upsertReceiverArchive({
     required String name,
     String? phone,
@@ -1110,22 +1123,40 @@ class DbHelper {
     required double lat,
     required double lng,
   }) async {
-    if (name.trim().isEmpty) return;
+    final cleanName = name.trim();
+    final cleanPhone = phone?.trim();
+    if (cleanName.isEmpty && (cleanPhone == null || cleanPhone.isEmpty)) return;
     final db = await database;
     final now = DateTime.now().toIso8601String();
 
     List<Map<String, dynamic>> existing = [];
-    if (phone != null && phone.trim().isNotEmpty) {
+
+    // 1. Try matching by phone first (with exact or normalized comparison)
+    if (cleanPhone != null && cleanPhone.isNotEmpty) {
       existing = await db.query(
         'receiver_archives',
         where: 'phone = ?',
-        whereArgs: [phone.trim()],
+        whereArgs: [cleanPhone],
       );
-    } 
-    
-    // BUG-09 FIX: Use SQL LOWER() query instead of O(n) full-table scan for name matching
-    if (existing.isEmpty) {
-      final targetNormalized = _normalizeName(name);
+
+      if (existing.isEmpty) {
+        final targetNormPhone = _normalizePhone(cleanPhone);
+        if (targetNormPhone.isNotEmpty) {
+          final allArchives = await db.query('receiver_archives');
+          for (final arch in allArchives) {
+            final aPhone = arch['phone'] as String?;
+            if (aPhone != null && _normalizePhone(aPhone) == targetNormPhone) {
+              existing = [arch];
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // 2. If no phone match found, fall back to name matching
+    if (existing.isEmpty && cleanName.isNotEmpty) {
+      final targetNormalized = _normalizeName(cleanName);
       if (targetNormalized.isNotEmpty) {
         existing = await db.query(
           'receiver_archives',
@@ -1138,15 +1169,16 @@ class DbHelper {
 
     if (existing.isNotEmpty) {
       final existingId = existing.first['id'] as String;
+      final existingName = existing.first['name'] as String? ?? '';
       await db.update(
         'receiver_archives',
         {
-          'name': name.trim(),
-          'phone': phone?.trim(),
-          'street': street?.trim(),
-          'zone': zone?.trim(),
-          'barangay': barangay?.trim(),
-          'city': city?.trim(),
+          'name': cleanName.isNotEmpty ? cleanName : existingName,
+          if (cleanPhone != null && cleanPhone.isNotEmpty) 'phone': cleanPhone,
+          if (street != null && street.trim().isNotEmpty) 'street': street.trim(),
+          if (zone != null && zone.trim().isNotEmpty) 'zone': zone.trim(),
+          if (barangay != null && barangay.trim().isNotEmpty) 'barangay': barangay.trim(),
+          if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
           'lat': lat,
           'lng': lng,
           'updated_at': now,
@@ -1154,13 +1186,13 @@ class DbHelper {
         where: 'id = ?',
         whereArgs: [existingId],
       );
-    } else {
+    } else if (cleanName.isNotEmpty) {
       await db.insert(
         'receiver_archives',
         {
           'id': const Uuid().v4(),
-          'name': name.trim(),
-          'phone': phone?.trim(),
+          'name': cleanName,
+          'phone': cleanPhone,
           'street': street?.trim(),
           'zone': zone?.trim(),
           'barangay': barangay?.trim(),

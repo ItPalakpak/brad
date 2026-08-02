@@ -471,7 +471,7 @@ class PackageFormState extends ConsumerState<PackageForm> {
     return cash + digital;
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
     final tracking = _trackingController.text.trim();
@@ -538,7 +538,8 @@ class PackageFormState extends ConsumerState<PackageForm> {
         updatedAt: DateTime.now(),
         photoPath: _photoPath,
       );
-      notifier.updatePackage(updatedPkg);
+      // CHANGED: Await updatePackage so database and receiver archive updates finish before calling onSaved
+      await notifier.updatePackage(updatedPkg);
     }
 
     widget.onSaved();

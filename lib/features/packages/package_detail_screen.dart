@@ -617,6 +617,7 @@ class _PackageDetailScreenState extends ConsumerState<PackageDetailScreen> {
                                     options: MapOptions(
                                       initialCenter: LatLng(p.lat!, p.lng!),
                                       initialZoom: 14.5,
+                                      interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
                                     ),
                                     children: [
                                       TileLayer(

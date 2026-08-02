@@ -317,6 +317,16 @@ class PackagesNotifier extends _$PackagesNotifier {
     final active = state.activeRide;
     final now = DateTime.now();
 
+    // Pre-compute archive lookups outside the transaction to avoid deadlock
+    // (_dbHelper methods use the db connection directly, which blocks inside a transaction)
+    final Map<String, Map<String, dynamic>?> archiveMaps = {};
+    for (final trk in trackingNumbers) {
+      final ocr = ocrDataMap[trk];
+      if (ocr != null && ((ocr.name != null && ocr.name!.isNotEmpty) || (ocr.phone != null && ocr.phone!.isNotEmpty))) {
+        archiveMaps[trk] = await _dbHelper.lookupReceiverArchive(ocr.name, ocr.phone);
+      }
+    }
+
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       for (final trk in trackingNumbers) {
@@ -325,12 +335,7 @@ class PackagesNotifier extends _$PackagesNotifier {
         final newSortOrder = maxOrder + 1;
 
         final ocr = ocrDataMap[trk];
-
-        // Archive lookup if available for receiver name / phone
-        Map<String, dynamic>? archiveMap;
-        if (ocr != null && ((ocr.name != null && ocr.name!.isNotEmpty) || (ocr.phone != null && ocr.phone!.isNotEmpty))) {
-          archiveMap = await _dbHelper.lookupReceiverArchive(ocr.name, ocr.phone);
-        }
+        final archiveMap = archiveMaps[trk];
 
         final street = ocr?.street ?? archiveMap?['street'] as String?;
         final zone = ocr?.zone ?? archiveMap?['zone'] as String?;
@@ -408,12 +413,29 @@ class PackagesNotifier extends _$PackagesNotifier {
     final sqlContent = await _dbHelper.exportDeliveredPackagesToSql();
     if (sqlContent.isEmpty) return null;
     
+    final fileName = 'BRAD_backup_autosave_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql';
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(
-      '${dir.path}/BRAD_backup_autosave_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql',
-    );
+    final file = File('${dir.path}/$fileName');
     await file.create(recursive: true);
     await file.writeAsString(sqlContent);
+
+    // CHANGED: Save another copy of the auto generated SQL backup in accessible external storage for rider access
+    try {
+      Directory? externalDir;
+      if (Platform.isAndroid) {
+        externalDir = await getExternalStorageDirectory();
+      } else {
+        externalDir = await getDownloadsDirectory() ?? dir;
+      }
+      if (externalDir != null) {
+        final externalFile = File('${externalDir.path}/$fileName');
+        await externalFile.create(recursive: true);
+        await externalFile.writeAsString(sqlContent);
+      }
+    } catch (e) {
+      debugPrint('Error saving accessible auto-backup copy: $e');
+    }
+
     return file.path;
   }
 
@@ -619,27 +641,66 @@ class PackagesNotifier extends _$PackagesNotifier {
     final sqlContent = await _dbHelper.exportDeliveredPackagesToSql();
     if (sqlContent.isEmpty) return '';
     
+    final fileName = 'BRAD_backup_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql';
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(
-      '${dir.path}/BRAD_backup_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.sql',
-    );
+    final file = File('${dir.path}/$fileName');
     await file.create(recursive: true);
     await file.writeAsString(sqlContent);
+
+    // CHANGED: Save another copy of the SQL backup to accessible external storage for rider and system access
+    try {
+      Directory? externalDir;
+      if (Platform.isAndroid) {
+        externalDir = await getExternalStorageDirectory();
+      } else {
+        externalDir = await getDownloadsDirectory() ?? dir;
+      }
+      if (externalDir != null) {
+        final externalFile = File('${externalDir.path}/$fileName');
+        await externalFile.create(recursive: true);
+        await externalFile.writeAsString(sqlContent);
+      }
+    } catch (e) {
+      debugPrint('Error saving accessible backup copy: $e');
+    }
+
     return file.path;
   }
 
-  // CHANGED: Expose listSqlBackups to retrieve available SQL backup files from the local documents directory
+  // CHANGED: Expose listSqlBackups to retrieve available SQL backup files from both internal documents and external storage
   Future<List<File>> listSqlBackups() async {
-    final dir = await getApplicationDocumentsDirectory();
-    if (!await dir.exists()) return [];
-    
-    final files = dir.listSync();
     final List<File> backupFiles = [];
-    for (final f in files) {
-      if (f is File && f.path.endsWith('.sql') && f.path.contains('BRAD_backup_')) {
-        backupFiles.add(f);
+    final List<Directory> dirsToScan = [];
+    
+    final appDir = await getApplicationDocumentsDirectory();
+    if (await appDir.exists()) dirsToScan.add(appDir);
+    
+    try {
+      Directory? extDir;
+      if (Platform.isAndroid) {
+        extDir = await getExternalStorageDirectory();
+      } else {
+        extDir = await getDownloadsDirectory();
+      }
+      if (extDir != null && await extDir.exists() && extDir.path != appDir.path) {
+        dirsToScan.add(extDir);
+      }
+    } catch (_) {}
+
+    final Set<String> fileNames = {};
+    for (final dir in dirsToScan) {
+      final files = dir.listSync();
+      for (final f in files) {
+        if (f is File && f.path.endsWith('.sql') && f.path.contains('BRAD_backup_')) {
+          final name = f.path.split(Platform.pathSeparator).last;
+          if (!fileNames.contains(name)) {
+            fileNames.add(name);
+            backupFiles.add(f);
+          }
+        }
       }
     }
+
     // Sort descending by date (most recent first)
     backupFiles.sort((a, b) => b.path.compareTo(a.path));
     return backupFiles;
