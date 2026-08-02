@@ -26,9 +26,13 @@ void main() async {
   // Initialize SharedPreferences
   final prefs = await SharedPreferences.getInstance();
 
-  // Initialize Services
+  // Initialize Services with robust error guards to prevent splash screen hanging
   final notificationService = NotificationService();
-  await notificationService.init();
+  try {
+    await notificationService.init();
+  } catch (e) {
+    debugPrint('Notification service initialization error: $e');
+  }
 
   // BUG-20 FIX: Wire notification tap to navigate to package detail screen
   notificationService.setOnTapCallback((packageId) {
@@ -36,11 +40,19 @@ void main() async {
   });
 
   final mapCacheService = MapCacheService();
-  await mapCacheService.init();
+  try {
+    await mapCacheService.init();
+  } catch (e) {
+    debugPrint('Map cache service initialization error: $e');
+  }
 
   // Initialize FCM Push Notifications
   final fcmService = FcmService(notificationService);
-  await fcmService.init();
+  try {
+    await fcmService.init();
+  } catch (e) {
+    debugPrint('FCM service initialization error: $e');
+  }
 
   runApp(
     ProviderScope(

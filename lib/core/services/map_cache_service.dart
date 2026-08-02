@@ -18,29 +18,28 @@ class MapCacheService {
   static const _storeName = 'ridertrack_tiles';
 
   Future<void> init() async {
-    // CHANGED: Initialise map tile cache backend in public persistent directory so tiles survive app uninstalls
-    Directory? persistentDir;
+    // CHANGED: Initialise map tile cache backend in app documents directory safely without requiring raw external storage permissions
     try {
-      if (Platform.isAndroid) {
-        final pubDownload = Directory('/storage/emulated/0/Download/BRAD_map_tiles');
-        if (!await pubDownload.exists()) {
-          await pubDownload.create(recursive: true);
+      Directory? persistentDir;
+      try {
+        if (!kIsWeb) {
+          final appDocDir = await getApplicationDocumentsDirectory();
+          persistentDir = Directory('${appDocDir.path}/BRAD_map_tiles');
+          if (!await persistentDir.exists()) {
+            await persistentDir.create(recursive: true);
+          }
         }
-        if (await pubDownload.exists()) {
-          persistentDir = pubDownload;
-        }
-      } else if (!kIsWeb) {
-        final appDocDir = await getApplicationDocumentsDirectory();
-        persistentDir = Directory('${appDocDir.path}/BRAD_map_tiles');
+      } catch (e) {
+        debugPrint('Error creating map tile directory: $e');
       }
-    } catch (e) {
-      debugPrint('Error creating persistent map tile directory: $e');
-    }
 
-    await FMTCObjectBoxBackend().initialise(
-      rootDirectory: persistentDir?.path,
-    );
-    await FMTCStore(_storeName).manage.create();
+      await FMTCObjectBoxBackend().initialise(
+        rootDirectory: persistentDir?.path,
+      );
+      await FMTCStore(_storeName).manage.create();
+    } catch (e) {
+      debugPrint('FMTC map tile cache initialization error: $e');
+    }
   }
 
   // Called from map screen TileLayer:
