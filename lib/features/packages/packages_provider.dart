@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -419,22 +421,8 @@ class PackagesNotifier extends _$PackagesNotifier {
     await file.create(recursive: true);
     await file.writeAsString(sqlContent);
 
-    // CHANGED: Save another copy of the auto generated SQL backup in accessible external storage for rider access
-    try {
-      Directory? externalDir;
-      if (Platform.isAndroid) {
-        externalDir = await getExternalStorageDirectory();
-      } else {
-        externalDir = await getDownloadsDirectory() ?? dir;
-      }
-      if (externalDir != null) {
-        final externalFile = File('${externalDir.path}/$fileName');
-        await externalFile.create(recursive: true);
-        await externalFile.writeAsString(sqlContent);
-      }
-    } catch (e) {
-      debugPrint('Error saving accessible auto-backup copy: $e');
-    }
+    // CHANGED: Save persistent copy in public Downloads folder (/storage/emulated/0/Download) to survive uninstallation
+    await _saveToPublicDownloads(fileName, utf8.encode(sqlContent));
 
     return file.path;
   }
@@ -636,7 +624,44 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
-  // CHANGED: Added exportToSql to write delivered package records to an SQL backup file on local storage before purging
+  /// Saves a persistent copy to public Download storage (e.g., /storage/emulated/0/Download)
+  /// so backups survive app uninstallation on Android/iOS.
+  Future<void> _saveToPublicDownloads(String fileName, List<int> bytes) async {
+    try {
+      final List<Directory> targetDirs = [];
+      
+      if (Platform.isAndroid) {
+        final publicDownload = Directory('/storage/emulated/0/Download');
+        if (await publicDownload.exists()) {
+          targetDirs.add(publicDownload);
+        }
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null && await extDir.exists()) {
+          targetDirs.add(extDir);
+        }
+      } else {
+        final downloadsDir = await getDownloadsDirectory();
+        if (downloadsDir != null && await downloadsDir.exists()) {
+          targetDirs.add(downloadsDir);
+        }
+      }
+
+      for (final dir in targetDirs) {
+        try {
+          final file = File('${dir.path}/$fileName');
+          await file.create(recursive: true);
+          await file.writeAsBytes(bytes);
+          debugPrint('Saved persistent backup copy to ${file.path}');
+        } catch (e) {
+          debugPrint('Failed writing copy to ${dir.path}: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error saving persistent backup copy: $e');
+    }
+  }
+
+  // CHANGED: Added exportToSql to write delivered package records to an SQL backup file on local & public storage before purging
   Future<String> exportToSql() async {
     final sqlContent = await _dbHelper.exportDeliveredPackagesToSql();
     if (sqlContent.isEmpty) return '';
@@ -647,62 +672,95 @@ class PackagesNotifier extends _$PackagesNotifier {
     await file.create(recursive: true);
     await file.writeAsString(sqlContent);
 
-    // CHANGED: Save another copy of the SQL backup to accessible external storage for rider and system access
-    try {
-      Directory? externalDir;
-      if (Platform.isAndroid) {
-        externalDir = await getExternalStorageDirectory();
-      } else {
-        externalDir = await getDownloadsDirectory() ?? dir;
-      }
-      if (externalDir != null) {
-        final externalFile = File('${externalDir.path}/$fileName');
-        await externalFile.create(recursive: true);
-        await externalFile.writeAsString(sqlContent);
-      }
-    } catch (e) {
-      debugPrint('Error saving accessible backup copy: $e');
-    }
+    // CHANGED: Save persistent copy in public Downloads folder (/storage/emulated/0/Download) to survive uninstallation
+    await _saveToPublicDownloads(fileName, utf8.encode(sqlContent));
 
     return file.path;
   }
 
-  // CHANGED: Expose listSqlBackups to retrieve available SQL backup files from both internal documents and external storage
+  // CHANGED: Expose listSqlBackups to retrieve available SQL backup files from internal documents, public Downloads, and external storage
   Future<List<File>> listSqlBackups() async {
     final List<File> backupFiles = [];
     final List<Directory> dirsToScan = [];
     
-    final appDir = await getApplicationDocumentsDirectory();
-    if (await appDir.exists()) dirsToScan.add(appDir);
-    
+    if (Platform.isAndroid) {
+      try {
+        await Permission.storage.request();
+      } catch (_) {}
+    }
+
+    // 1. Internal app directory
     try {
-      Directory? extDir;
-      if (Platform.isAndroid) {
-        extDir = await getExternalStorageDirectory();
-      } else {
-        extDir = await getDownloadsDirectory();
+      final appDir = await getApplicationDocumentsDirectory();
+      if (await appDir.exists()) dirsToScan.add(appDir);
+    } catch (_) {}
+
+    // 2. Public Android Download directories (persists across uninstalls)
+    if (Platform.isAndroid) {
+      final candidatePaths = [
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Downloads',
+        '/sdcard/Download',
+        '/sdcard/Downloads',
+      ];
+      for (final path in candidatePaths) {
+        try {
+          final dir = Directory(path);
+          if (await dir.exists() && !dirsToScan.any((d) => d.path == dir.path)) {
+            dirsToScan.add(dir);
+          }
+        } catch (_) {}
       }
-      if (extDir != null && await extDir.exists() && extDir.path != appDir.path) {
-        dirsToScan.add(extDir);
+    }
+
+    // 3. System Downloads directory
+    try {
+      final downloadsDir = await getDownloadsDirectory();
+      if (downloadsDir != null && await downloadsDir.exists() && !dirsToScan.any((d) => d.path == downloadsDir.path)) {
+        dirsToScan.add(downloadsDir);
+      }
+    } catch (_) {}
+
+    // 4. External App storage
+    try {
+      if (Platform.isAndroid) {
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null && await extDir.exists() && !dirsToScan.any((d) => d.path == extDir.path)) {
+          dirsToScan.add(extDir);
+        }
       }
     } catch (_) {}
 
     final Set<String> fileNames = {};
     for (final dir in dirsToScan) {
-      final files = dir.listSync();
-      for (final f in files) {
-        if (f is File && f.path.endsWith('.sql') && f.path.contains('BRAD_backup_')) {
-          final name = f.path.split(Platform.pathSeparator).last;
-          if (!fileNames.contains(name)) {
-            fileNames.add(name);
-            backupFiles.add(f);
+      try {
+        final files = dir.listSync();
+        for (final f in files) {
+          if (f is File) {
+            final name = f.path.split(Platform.pathSeparator).last;
+            final pathLower = f.path.toLowerCase();
+            // Accept any .sql file that contains "brad" or "backup" or ends with .sql
+            if (pathLower.endsWith('.sql') && (name.contains('BRAD') || name.contains('backup') || pathLower.contains('brad'))) {
+              if (!fileNames.contains(name)) {
+                fileNames.add(name);
+                backupFiles.add(f);
+              }
+            }
           }
         }
+      } catch (e) {
+        debugPrint('Error scanning directory ${dir.path} for backups: $e');
       }
     }
 
-    // Sort descending by date (most recent first)
-    backupFiles.sort((a, b) => b.path.compareTo(a.path));
+    // Sort descending by last modified date or filename
+    backupFiles.sort((a, b) {
+      try {
+        return b.lastModifiedSync().compareTo(a.lastModifiedSync());
+      } catch (_) {
+        return b.path.compareTo(a.path);
+      }
+    });
     return backupFiles;
   }
 
@@ -779,13 +837,16 @@ class PackagesNotifier extends _$PackagesNotifier {
       ]);
     }
 
+    final fileName = 'BRAD_export_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
     final fileBytes = excelObj.save();
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(
-      '${dir.path}/BRAD_export_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx',
-    );
+    final file = File('${dir.path}/$fileName');
     await file.create(recursive: true);
     await file.writeAsBytes(fileBytes!);
+
+    // Save persistent copy in public Downloads directory
+    await _saveToPublicDownloads(fileName, fileBytes);
+
     return file.path;
   }
 

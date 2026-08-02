@@ -701,6 +701,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         String displayDate = filename;
                         try {
                           final datePart = filename
+                              .replaceAll('BRAD_backup_autosave_', '')
                               .replaceAll('BRAD_backup_', '')
                               .replaceAll('.sql', '');
                           final year = int.parse(datePart.substring(0, 4));
@@ -709,10 +710,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           final hour = int.parse(datePart.substring(9, 11));
                           final minute = int.parse(datePart.substring(11, 13));
                           final dt = DateTime(year, month, day, hour, minute);
-                          displayDate = DateFormat(
-                            'MMMM dd, yyyy - hh:mm a',
-                          ).format(dt);
-                        } catch (_) {}
+                          final isAutosave = filename.contains('autosave');
+                          displayDate = '${DateFormat('MMMM dd, yyyy - hh:mm a').format(dt)}${isAutosave ? ' (Autosave)' : ''}';
+                        } catch (_) {
+                          try {
+                            displayDate = DateFormat('MMMM dd, yyyy - hh:mm a').format(file.lastModifiedSync());
+                          } catch (_) {}
+                        }
+
+                        final isDownloadDir = file.path.toLowerCase().contains('download');
+                        final locLabel = isDownloadDir ? '📍 Downloads Folder' : '📱 Internal Storage';
 
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
@@ -724,7 +731,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                           ),
                           subtitle: Text(
-                            filename,
+                            '$locLabel • $filename',
                             style: TextStyle(
                               fontSize: 11,
                               color: tokens.textSubtle,
