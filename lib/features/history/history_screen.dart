@@ -12,6 +12,7 @@ import '../../shared/widgets/brand_logo.dart';
 import '../../shared/utils/currency_formatter.dart';
 import '../../core/database/db_helper.dart';
 import '../packages/package_card.dart';
+import '../packages/packages_provider.dart';
 import 'history_provider.dart';
 import 'date_range_picker.dart';
 import '../../app/router.dart';
@@ -26,6 +27,50 @@ class HistoryScreen extends ConsumerStatefulWidget {
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   int _currentTab = 0; // 0 = Deliveries List, 1 = Analytics / Earnings
+  // CHANGED: Added multi-select deletion state for history screen
+  final Set<String> _selectedPackageIds = {};
+
+  Future<void> _confirmAndDeleteSelected(BuildContext context, PackagesNotifier notifier) async {
+    final count = _selectedPackageIds.length;
+    if (count == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Delete Packages?'),
+          content: Text('Are you sure you want to delete $count selected package(s)? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('DELETE', style: TextStyle(color: AppStatusColors.error, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      final idsToDelete = _selectedPackageIds.toList();
+      setState(() {
+        _selectedPackageIds.clear();
+      });
+      await notifier.deletePackages(idsToDelete);
+      ref.read(historyNotifierProvider.notifier).refresh();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Deleted $count package(s).'),
+            backgroundColor: AppStatusColors.error,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -61,34 +106,77 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 floating: true,
                 snap: true,
                 pinned: false,
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    BrandLogo(type: BrandLogoType.icon, height: 32),
-                    const SizedBox(width: 8),
-                    Text(
-                      'HISTORY',
-                      style: TextStyle(
-                        color: tokens.text,
-                        fontFamily: 'Syne',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
+                title: _selectedPackageIds.isNotEmpty
+                    ? Text(
+                        '${_selectedPackageIds.length} SELECTED',
+                        style: TextStyle(
+                          color: tokens.text,
+                          fontFamily: 'Syne',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          BrandLogo(type: BrandLogoType.icon, height: 32),
+                          const SizedBox(width: 8),
+                          Text(
+                            'HISTORY',
+                            style: TextStyle(
+                              color: tokens.text,
+                              fontFamily: 'Syne',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.map_rounded),
-                    tooltip: 'Ride Tracking Map',
-                    onPressed: () => context.push('/history/map'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded),
-                    tooltip: 'Refresh',
-                    onPressed: () => notifier.refresh(),
-                  ),
-                ],
+                actions: _selectedPackageIds.isNotEmpty
+                    ? [
+                        TextButton(
+                          onPressed: () {
+                            final allIds = state.packages.map((p) => p.id).toSet();
+                            setState(() {
+                              if (_selectedPackageIds.length == allIds.length) {
+                                _selectedPackageIds.clear();
+                              } else {
+                                _selectedPackageIds.addAll(allIds);
+                              }
+                            });
+                          },
+                          child: Text(
+                            _selectedPackageIds.length == state.packages.length ? 'DESELECT' : 'SELECT ALL',
+                            style: TextStyle(color: tokens.accent, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: AppStatusColors.error),
+                          tooltip: 'Delete Selected',
+                          onPressed: () => _confirmAndDeleteSelected(context, ref.read(packagesNotifierProvider.notifier)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          tooltip: 'Cancel Selection',
+                          onPressed: () {
+                            setState(() {
+                              _selectedPackageIds.clear();
+                            });
+                          },
+                        ),
+                      ]
+                    : [
+                        IconButton(
+                          icon: const Icon(Icons.map_rounded),
+                          tooltip: 'Ride Tracking Map',
+                          onPressed: () => context.push('/history/map'),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh_rounded),
+                          tooltip: 'Refresh',
+                          onPressed: () => notifier.refresh(),
+                        ),
+                      ],
               ),
             ];
           },
@@ -286,6 +374,24 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                       key: ValueKey(pkg.id),
                                       package: pkg,
                                       showDragHandle: false,
+                                      isSelectionMode: _selectedPackageIds.isNotEmpty,
+                                      isSelected: _selectedPackageIds.contains(pkg.id),
+                                      onLongPress: () {
+                                        setState(() {
+                                          _selectedPackageIds.add(pkg.id);
+                                        });
+                                      },
+                                      onTap: _selectedPackageIds.isNotEmpty
+                                          ? () {
+                                              setState(() {
+                                                if (_selectedPackageIds.contains(pkg.id)) {
+                                                  _selectedPackageIds.remove(pkg.id);
+                                                } else {
+                                                  _selectedPackageIds.add(pkg.id);
+                                                }
+                                              });
+                                            }
+                                          : null,
                                     );
                                   },
                                 ))

@@ -528,6 +528,15 @@ class PackagesNotifier extends _$PackagesNotifier {
     ref.read(geofenceManagerProvider).syncGeofences();
   }
 
+  // CHANGED: Added deletePackages to support multi-select bulk package deletion
+  Future<void> deletePackages(List<String> ids) async {
+    for (final id in ids) {
+      await _dbHelper.deletePackage(id);
+    }
+    await refresh();
+    ref.read(geofenceManagerProvider).syncGeofences();
+  }
+
 
 
   Future<void> markDelivered(

@@ -19,12 +19,21 @@ class PackageCard extends ConsumerWidget {
   final Package package;
   final bool showDragHandle;
   final int? index;
+  // CHANGED: Added multi-selection state and callback parameters
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onTap;
 
   const PackageCard({
     super.key,
     required this.package,
     this.showDragHandle = false,
     this.index,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onTap,
   });
 
   Future<void> _quickDeliverPrepaid(BuildContext context, WidgetRef ref) async {
@@ -208,43 +217,63 @@ class PackageCard extends ConsumerWidget {
             ),
           ],
         ),
-        child: OffsetShadowCard(
-          padding: EdgeInsets.zero,
-          onTap: () {
-            context.push('/packages/${package.id}');
-          },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Return notification banner if max attempts reached
-              if (isMaxAttempts)
-                Container(
-                  color: AppStatusColors.errorSoft,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded, size: 14, color: AppStatusColors.error),
-                      const SizedBox(width: 6),
-                      Text(
-                        'RETURN TO SENDER: Max attempts reached (${package.attemptCount}/3)',
-                        style: const TextStyle(
-                          color: AppStatusColors.error,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Top row: barcode # + status
-                    Row(
+        child: GestureDetector(
+          onLongPress: onLongPress,
+          child: OffsetShadowCard(
+            padding: EdgeInsets.zero,
+            onTap: () {
+              if (isSelectionMode) {
+                onTap?.call();
+              } else if (onTap != null) {
+                onTap!();
+              } else {
+                context.push('/packages/${package.id}');
+              }
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Return notification banner if max attempts reached
+                if (isMaxAttempts)
+                  Container(
+                    color: AppStatusColors.errorSoft,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    child: Row(
                       children: [
-                        if (showDragHandle) ...[
+                        const Icon(Icons.warning_amber_rounded, size: 14, color: AppStatusColors.error),
+                        const SizedBox(width: 6),
+                        Text(
+                          'RETURN TO SENDER: Max attempts reached (${package.attemptCount}/3)',
+                          style: const TextStyle(
+                            color: AppStatusColors.error,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top row: barcode # + status
+                      Row(
+                        children: [
+                          if (isSelectionMode) ...[
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Checkbox(
+                                value: isSelected,
+                                onChanged: (_) => onTap?.call(),
+                                activeColor: tokens.accent,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          if (showDragHandle) ...[
                           if (index != null)
                             ReorderableDragStartListener(
                               index: index!,
@@ -362,6 +391,7 @@ class PackageCard extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
