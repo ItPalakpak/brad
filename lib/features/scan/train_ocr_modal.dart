@@ -12,9 +12,11 @@ import '../../core/theme/app_theme.dart';
 class TrainOcrModal extends StatefulWidget {
   const TrainOcrModal({super.key});
 
-  static Future<void> show(BuildContext context) {
+  // CHANGED: Added optional useRootNavigator parameter to support launching modal from root shell navigation context
+  static Future<void> show(BuildContext context, {bool useRootNavigator = false}) {
     return showModalBottomSheet(
       context: context,
+      useRootNavigator: useRootNavigator,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => const TrainOcrModal(),
@@ -92,6 +94,18 @@ class _TrainOcrModalState extends State<TrainOcrModal> {
     }
   }
 
+  @override
+  void dispose() {
+    // CHANGED: Properly dispose all controllers when modal is closed
+    _formatNameController.dispose();
+    _trackingAnchorController.dispose();
+    _nameAnchorController.dispose();
+    _phoneAnchorController.dispose();
+    _streetAnchorController.dispose();
+    _codAnchorController.dispose();
+    super.dispose();
+  }
+
   Future<void> _saveTrainedFormat() async {
     final formatName = _formatNameController.text.trim();
     if (formatName.isEmpty) {
@@ -101,12 +115,30 @@ class _TrainOcrModalState extends State<TrainOcrModal> {
       return;
     }
 
+    final trackingAnchor = _trackingAnchorController.text.trim();
+    final nameAnchor = _nameAnchorController.text.trim();
+    final phoneAnchor = _phoneAnchorController.text.trim();
+    final streetAnchor = _streetAnchorController.text.trim();
+    final codAnchor = _codAnchorController.text.trim();
+
+    // CHANGED: Validation to ensure at least one field anchor keyword is configured before saving
+    if (trackingAnchor.isEmpty &&
+        nameAnchor.isEmpty &&
+        phoneAnchor.isEmpty &&
+        streetAnchor.isEmpty &&
+        codAnchor.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please configure at least one keyword anchor (e.g. Tracking, Name, Phone, or Address).')),
+      );
+      return;
+    }
+
     final patternMap = {
-      'tracking_anchor': _trackingAnchorController.text.trim(),
-      'name_anchor': _nameAnchorController.text.trim(),
-      'phone_anchor': _phoneAnchorController.text.trim(),
-      'street_anchor': _streetAnchorController.text.trim(),
-      'cod_anchor': _codAnchorController.text.trim(),
+      'tracking_anchor': trackingAnchor,
+      'name_anchor': nameAnchor,
+      'phone_anchor': phoneAnchor,
+      'street_anchor': streetAnchor,
+      'cod_anchor': codAnchor,
     };
 
     final newFormat = LearnedOcrFormat(
@@ -141,7 +173,28 @@ class _TrainOcrModalState extends State<TrainOcrModal> {
     }
   }
 
+  // CHANGED: Added delete confirmation dialog before deleting trained OCR template from SQLite
   Future<void> _deleteFormat(String id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Format Template?'),
+        content: const Text('Are you sure you want to delete this custom trained OCR format template?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('DELETE', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     try {
       await DbHelper.instance.deleteLearnedOcrFormat(id);
       await _loadExistingFormats();

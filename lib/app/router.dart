@@ -214,7 +214,7 @@ class MainNavigationShell extends ConsumerWidget {
                     child: GestureDetector(
                       onTap: () {
                         ref.read(showTrainModelPopupProvider.notifier).state = false;
-                        TrainOcrModal.show(context);
+                        TrainOcrModal.show(context, useRootNavigator: true);
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
