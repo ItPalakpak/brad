@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/scan/scan_screen.dart';
+import '../features/scan/train_ocr_modal.dart';
 import '../features/packages/packages_screen.dart';
 import '../features/packages/package_detail_screen.dart';
 import '../features/map/map_screen.dart';
@@ -95,6 +96,8 @@ final appRouter = GoRouter(
 
 // CHANGED: Added showNavBarProvider to coordinate hiding/showing the bottom navigation bar based on scrolling actions
 final showNavBarProvider = StateProvider<bool>((ref) => true);
+// CHANGED: Added state provider for long-press Train Model popup above scan button
+final showTrainModelPopupProvider = StateProvider<bool>((ref) => false);
 
 class MainNavigationShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
@@ -106,6 +109,7 @@ class MainNavigationShell extends ConsumerWidget {
     final tokens = context.tokens;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final showNavBar = ref.watch(showNavBarProvider);
+    final showTrainPopup = ref.watch(showTrainModelPopupProvider);
 
     return Scaffold(
       body: navigationShell,
@@ -203,13 +207,60 @@ class MainNavigationShell extends ConsumerWidget {
                     ],
                   ),
                 ),
+                // CHANGED: Pop-up Train Model icon button above scan button on long press
+                if (showTrainPopup)
+                  Positioned(
+                    top: -62,
+                    child: GestureDetector(
+                      onTap: () {
+                        ref.read(showTrainModelPopupProvider.notifier).state = false;
+                        TrainOcrModal.show(context);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: tokens.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: tokens.accent, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.model_training_outlined, size: 16, color: tokens.accent),
+                            const SizedBox(width: 4),
+                            Text(
+                              'TRAIN MODEL',
+                              style: TextStyle(
+                                color: tokens.accent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 // Floating Center Scan Button (In-line)
                 Positioned(
                   top: -10, // Positioned in the middle of the 60px active bar height
                   child: GestureDetector(
                     onTap: () {
+                      if (showTrainPopup) {
+                        ref.read(showTrainModelPopupProvider.notifier).state = false;
+                      }
                       ref.read(showNavBarProvider.notifier).state = true;
                       navigationShell.goBranch(2);
+                    },
+                    onLongPress: () {
+                      ref.read(showTrainModelPopupProvider.notifier).state = !showTrainPopup;
                     },
                     child: Container(
                       width: 52,

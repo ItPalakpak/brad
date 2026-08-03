@@ -278,17 +278,28 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
       // Apply offline noise reduction & Douglas-Peucker simplification
       final List<LatLng> offlineSmoothed = RouteSmoother.smoothRoute(rawPoints);
 
+      // CHANGED: Helper to calculate polyline distance if API returns 0
+      double calcPolylineDist(List<LatLng> pts) {
+        if (pts.length < 2) return 0.0;
+        double d = 0.0;
+        for (int i = 0; i < pts.length - 1; i++) {
+          d += _calculateDistance(pts[i], pts[i + 1]);
+        }
+        return d;
+      }
+
       // Try fetching map-matched road route from OSRM (online upgrade)
       final mapMatchedRoute = await _fetchMapMatchedRoute(offlineSmoothed);
       
       if (mapMatchedRoute != null && mapMatchedRoute.points.isNotEmpty) {
+        final dist = mapMatchedRoute.distance > 0 ? mapMatchedRoute.distance : calcPolylineDist(mapMatchedRoute.points);
         state = HistoryMapState(
           selectedDate: date,
           availableRides: availableRides,
           selectedRide: ride,
           packages: packages,
           routePoints: mapMatchedRoute.points,
-          distanceMeters: mapMatchedRoute.distance,
+          distanceMeters: dist,
           duration: duration,
           isLoading: false,
           deliveryStats: deliveryStats,
@@ -298,13 +309,14 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
         // CHANGED: When map-match fails, try OSRM route API to get road-following directions between waypoints instead of straight lines
         final routedPath = await _fetchRoutedPath(offlineSmoothed);
         if (routedPath != null && routedPath.points.isNotEmpty) {
+          final dist = routedPath.distance > 0 ? routedPath.distance : calcPolylineDist(routedPath.points);
           state = HistoryMapState(
             selectedDate: date,
             availableRides: availableRides,
             selectedRide: ride,
             packages: packages,
             routePoints: routedPath.points,
-            distanceMeters: routedPath.distance,
+            distanceMeters: dist,
             duration: duration,
             isLoading: false,
             deliveryStats: deliveryStats,
@@ -314,10 +326,7 @@ class HistoryMapNotifier extends _$HistoryMapNotifier {
         }
 
         // Offline primary fallback: calculate distance along offline smoothed trace
-        double dist = 0.0;
-        for (int i = 0; i < offlineSmoothed.length - 1; i++) {
-          dist += _calculateDistance(offlineSmoothed[i], offlineSmoothed[i + 1]);
-        }
+        final dist = calcPolylineDist(offlineSmoothed);
         state = HistoryMapState(
           selectedDate: date,
           availableRides: availableRides,

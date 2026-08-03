@@ -195,9 +195,17 @@ class _HistoryMapScreenState extends ConsumerState<HistoryMapScreen> {
     // Calculate details for telemetry
     final totalPackages = state.packages.length;
     final deliveredPackages = state.packages.where((p) => p.status == 'delivered').length;
-    final distanceText = _formatDistance(state.distanceMeters);
+    // CHANGED: Fallback calculation for effective distance to fix zero-distance telemetry bug when route points exist
+    double effectiveDistance = state.distanceMeters;
+    if (effectiveDistance <= 0 && state.routePoints.length >= 2) {
+      const Distance distanceCalc = Distance();
+      for (int i = 0; i < state.routePoints.length - 1; i++) {
+        effectiveDistance += distanceCalc.as(LengthUnit.Meter, state.routePoints[i], state.routePoints[i + 1]);
+      }
+    }
+    final distanceText = _formatDistance(effectiveDistance);
     final durationText = _formatDuration(state.duration);
-    final speedText = _calculateAvgSpeed(state.distanceMeters, state.duration);
+    final speedText = _calculateAvgSpeed(effectiveDistance, state.duration);
 
     return Scaffold(
       appBar: AppBar(
